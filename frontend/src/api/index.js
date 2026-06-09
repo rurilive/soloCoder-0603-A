@@ -16,6 +16,7 @@ export const hotelApi = {
 };
 
 export const roomApi = {
+  getRoom: (id) => api.get(`/admin/rooms/${id}`),
   createRoom: (hotelId, data) => api.post(`/admin/hotels/${hotelId}/rooms`, data),
   updateRoom: (id, data) => api.put(`/admin/rooms/${id}`, data),
   deleteRoom: (id) => api.delete(`/admin/rooms/${id}`),

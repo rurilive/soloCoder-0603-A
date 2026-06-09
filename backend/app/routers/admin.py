@@ -73,6 +73,13 @@ def create_room(hotel_id: int, room: RoomCreate, db: Session = Depends(get_db)):
     
     return new_room
 
+@router.get("/admin/rooms/{room_id}", response_model=RoomSchema)
+def get_room(room_id: int, db: Session = Depends(get_db)):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
 @router.put("/admin/rooms/{room_id}", response_model=RoomSchema)
 def update_room(room_id: int, room: RoomUpdate, db: Session = Depends(get_db)):
     db_room = db.query(Room).filter(Room.id == room_id).first()

@@ -26,13 +26,13 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
     if nights <= 0:
         raise HTTPException(status_code=400, detail="Invalid date range")
     
-    completed_orders = db.query(Order).filter(
+    active_orders = db.query(Order).filter(
         Order.room_id == booking.room_id,
-        Order.status == "completed",
+        Order.status != "cancelled",
         (Order.check_in <= booking.check_out) & (Order.check_out >= booking.check_in)
     ).count()
     
-    if completed_orders >= room.room_count:
+    if active_orders >= room.room_count:
         raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
     
     total_price = calculate_total_price(room.price_per_night, nights)
