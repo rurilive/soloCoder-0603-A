@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, Button, Row, Col, Rate, Modal, Form, Input, DatePicker, message } from 'antd';
-import { MapPin, Wifi, Coffee, Pool, Car, Bed, Calendar, Percent } from '@ant-design/icons';
-import { hotelApi, bookingApi, pricingApi } from '../../api';
+import { Card, Button, Row, Col, Rate, Modal, Form, Input, DatePicker, message, Avatar } from 'antd';
+import { MapPin, Wifi, Coffee, Pool, Car, Bed, Calendar, Percent, Star, MessageSquare } from '@ant-design/icons';
+import { hotelApi, bookingApi, pricingApi, reviewApi } from '../../api';
 
 function HotelDetail() {
   const { id } = useParams();
@@ -13,10 +13,20 @@ function HotelDetail() {
   const [form] = Form.useForm();
   const [priceInfo, setPriceInfo] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  
+  const [reviews, setReviews] = useState([]);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   useEffect(() => {
     hotelApi.getHotel(id).then((res) => {
       setHotel(res.data);
+    });
+    
+    reviewApi.getReviews({ hotel_id: id }).then((res) => {
+      setReviews(res.data);
     });
   }, [id]);
 
@@ -85,6 +95,35 @@ function HotelDetail() {
       breakfast: <Coffee className="text-blue-500" />,
     };
     return icons[amenity] || null;
+  };
+
+  const handleSubmitReview = () => {
+    if (!reviewComment.trim()) {
+      message.error('请输入评价内容');
+      return;
+    }
+    
+    setIsSubmittingReview(true);
+    reviewApi.createReview({
+      order_id: 1,
+      rating: reviewRating,
+      comment: reviewComment,
+    }).then((res) => {
+      message.success('评价提交成功，等待审核');
+      setReviewComment('');
+      setReviewRating(5);
+      setShowReviewForm(false);
+      setIsSubmittingReview(false);
+    }).catch((error) => {
+      message.error(error.response?.data?.detail || '提交失败，请重试');
+      setIsSubmittingReview(false);
+    });
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   };
 
   if (!hotel) {
@@ -167,6 +206,94 @@ function HotelDetail() {
             </Col>
           ))}
         </Row>
+
+        <div className="mt-12">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <h2 className="text-2xl font-bold">用户评价</h2>
+              <div className="flex items-center gap-2">
+                <Star className="text-yellow-500" />
+                <span className="text-xl font-bold">{hotel.average_rating || 0}</span>
+                <span className="text-gray-500">({hotel.review_count}条评价)</span>
+              </div>
+            </div>
+            <Button
+              type="primary"
+              onClick={() => setShowReviewForm(true)}
+              icon={<MessageSquare />}
+            >
+              写评价
+            </Button>
+          </div>
+
+          {showReviewForm && (
+            <Card className="mb-6">
+              <h3 className="font-bold mb-4">发表评价</h3>
+              <div className="mb-4">
+                <span className="text-gray-500 mr-2">评分：</span>
+                <Rate value={reviewRating} onChange={(value) => setReviewRating(value)} />
+              </div>
+              <Form.Item>
+                <Input.TextArea
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  placeholder="请输入您对酒店的评价..."
+                  rows={4}
+                />
+              </Form.Item>
+              <div className="flex justify-end gap-4">
+                <Button onClick={() => setShowReviewForm(false)}>取消</Button>
+                <Button
+                  type="primary"
+                  onClick={handleSubmitReview}
+                  loading={isSubmittingReview}
+                >
+                  提交评价
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          <div className="space-y-4">
+            {reviews.length === 0 ? (
+              <Card>
+                <div className="text-center py-12 text-gray-500">
+                  <MessageSquare className="text-4xl mx-auto mb-4 opacity-50" />
+                  <p>暂无评价</p>
+                </div>
+              </Card>
+            ) : (
+              reviews.map((review) => (
+                <Card key={review.id} className="border-l-4 border-yellow-400">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <Avatar className="bg-blue-500">
+                        {review.order?.guest_name?.charAt(0) || 'U'}
+                      </Avatar>
+                      <div>
+                        <p className="font-bold">{review.order?.guest_name || '匿名用户'}</p>
+                        <div className="flex items-center gap-2">
+                          <Rate disabled value={review.rating} />
+                          <span className="text-gray-400 text-sm">{formatDate(review.created_at)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-gray-600">{review.comment}</p>
+                  {review.reply && (
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <p className="font-bold text-gray-800 mb-2">酒店回复：</p>
+                      <p className="text-gray-600">{review.reply}</p>
+                      {review.reply_at && (
+                        <p className="text-gray-400 text-sm mt-2">{formatDate(review.reply_at)}</p>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       <Modal

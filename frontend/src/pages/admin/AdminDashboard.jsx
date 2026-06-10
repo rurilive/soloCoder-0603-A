@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Row, Col, Statistic, Button } from 'antd';
-import { Hotel, ShoppingCart, Users, DollarSign } from '@ant-design/icons';
+import { Hotel, ShoppingCart, Users, DollarSign, MessageSquare } from '@ant-design/icons';
 import { statsApi, orderApi, hotelApi } from '../../api';
 
 function AdminDashboard() {
@@ -135,6 +135,14 @@ function AdminDashboard() {
               <div className="text-center py-4">
                 <Users className="text-4xl text-orange-500 mx-auto mb-2" />
                 <p className="font-medium">订单管理</p>
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} sm={6}>
+            <Card className="cursor-pointer hover:shadow-md transition" onClick={() => window.location.href = '/admin/reviews'}>
+              <div className="text-center py-4">
+                <MessageSquare className="text-4xl text-blue-500 mx-auto mb-2" />
+                <p className="font-medium">评价审核</p>
               </div>
             </Card>
           </Col>
