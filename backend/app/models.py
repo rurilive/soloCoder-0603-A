@@ -20,8 +20,6 @@ class Hotel(Base):
     
     rooms = relationship("Room", back_populates="hotel", cascade="all, delete")
     orders = relationship("Order", back_populates="hotel")
-    price_calendars = relationship("PriceCalendar", back_populates="room", cascade="all, delete")
-    stay_discounts = relationship("StayDiscount", back_populates="room", cascade="all, delete")
 
 class Room(Base):
     __tablename__ = "rooms"

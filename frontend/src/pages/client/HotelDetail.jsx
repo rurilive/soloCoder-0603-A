@@ -27,9 +27,11 @@ function HotelDetail() {
     form.resetFields();
   };
 
-  const handleDateChange = (values) => {
-    if (selectedRoom && values.check_in && values.check_out) {
-      calculatePrice(values.check_in, values.check_out);
+  const handleDateChange = (changedValues, allValues) => {
+    if (changedValues.check_in || changedValues.check_out) {
+      if (selectedRoom && allValues.check_in && allValues.check_out) {
+        calculatePrice(allValues.check_in, allValues.check_out);
+      }
     }
   };
 
