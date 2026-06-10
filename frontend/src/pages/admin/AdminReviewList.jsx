@@ -11,20 +11,33 @@ function AdminReviewList() {
   const [selectedReview, setSelectedReview] = useState(null);
   const [replyContent, setReplyContent] = useState('');
   const [isReplying, setIsReplying] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     loadReviews();
-  }, []);
+  }, [statusFilter]);
 
   const loadReviews = () => {
     setLoading(true);
-    reviewApi.getPendingReviews().then((res) => {
-      setReviews(res.data);
-      setLoading(false);
-    }).catch(() => {
-      message.error('加载失败');
-      setLoading(false);
-    });
+    const params = statusFilter === 'pending' ? {} : { status: statusFilter === 'all' ? undefined : statusFilter };
+    
+    if (statusFilter === 'pending') {
+      reviewApi.getPendingReviews(params).then((res) => {
+        setReviews(res.data);
+        setLoading(false);
+      }).catch(() => {
+        message.error('加载失败');
+        setLoading(false);
+      });
+    } else {
+      reviewApi.getReviews(params).then((res) => {
+        setReviews(res.data);
+        setLoading(false);
+      }).catch(() => {
+        message.error('加载失败');
+        setLoading(false);
+      });
+    }
   };
 
   const handleApprove = (reviewId) => {
@@ -94,13 +107,45 @@ function AdminReviewList() {
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between mb-8">
           <h2 className="text-2xl font-bold">评价审核</h2>
-          <Button
-            icon={<RefreshCw />}
-            onClick={loadReviews}
-            loading={loading}
-          >
-            刷新
-          </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <Button
+                type={statusFilter === 'all' ? 'primary' : 'default'}
+                onClick={() => setStatusFilter('all')}
+                className={statusFilter === 'all' ? 'bg-blue-500 text-white' : ''}
+              >
+                全部
+              </Button>
+              <Button
+                type={statusFilter === 'pending' ? 'primary' : 'default'}
+                onClick={() => setStatusFilter('pending')}
+                className={statusFilter === 'pending' ? 'bg-yellow-500 text-white' : ''}
+              >
+                待审核
+              </Button>
+              <Button
+                type={statusFilter === 'approved' ? 'primary' : 'default'}
+                onClick={() => setStatusFilter('approved')}
+                className={statusFilter === 'approved' ? 'bg-green-500 text-white' : ''}
+              >
+                已通过
+              </Button>
+              <Button
+                type={statusFilter === 'rejected' ? 'primary' : 'default'}
+                onClick={() => setStatusFilter('rejected')}
+                className={statusFilter === 'rejected' ? 'bg-red-500 text-white' : ''}
+              >
+                已拒绝
+              </Button>
+            </div>
+            <Button
+              icon={<RefreshCw />}
+              onClick={loadReviews}
+              loading={loading}
+            >
+              刷新
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -121,7 +166,10 @@ function AdminReviewList() {
                 {reviews.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="text-center py-12 text-gray-500">
-                      暂无待审核评价
+                      {statusFilter === 'pending' ? '暂无待审核评价' :
+                       statusFilter === 'approved' ? '暂无已通过评价' :
+                       statusFilter === 'rejected' ? '暂无已拒绝评价' :
+                       '暂无评价'}
                     </td>
                   </tr>
                 ) : (
