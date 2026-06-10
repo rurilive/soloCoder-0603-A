@@ -57,4 +57,15 @@ export const pricingApi = {
   calculatePrice: (data) => api.post('/pricing/calculate', data),
 };
 
+export const reviewApi = {
+  createReview: (data) => api.post('/reviews', data),
+  getReviews: (params) => api.get('/reviews', { params }),
+  getPendingReviews: (params) => api.get('/reviews/pending', { params }),
+  getReview: (id) => api.get(`/reviews/${id}`),
+  updateReviewStatus: (id, status) => api.put(`/reviews/${id}/status`, { status }),
+  replyToReview: (id, reply) => api.put(`/reviews/${id}/reply`, { reply }),
+  deleteReview: (id) => api.delete(`/reviews/${id}`),
+  getHotelRating: (hotelId) => api.get(`/hotels/${hotelId}/rating`),
+};
+
 export default api;

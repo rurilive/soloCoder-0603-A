@@ -20,6 +20,7 @@ class Hotel(Base):
     
     rooms = relationship("Room", back_populates="hotel", cascade="all, delete")
     orders = relationship("Order", back_populates="hotel")
+    reviews = relationship("Review", back_populates="hotel")
 
 class Room(Base):
     __tablename__ = "rooms"
@@ -86,3 +87,21 @@ class Order(Base):
     
     hotel = relationship("Hotel", back_populates="orders")
     room = relationship("Room", back_populates="orders")
+    review = relationship("Review", back_populates="order", uselist=False)
+
+class Review(Base):
+    __tablename__ = "reviews"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), unique=True)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"))
+    rating = Column(Integer)
+    comment = Column(Text)
+    status = Column(String, default="pending")
+    reply = Column(Text)
+    reply_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    
+    order = relationship("Order", back_populates="review")
+    hotel = relationship("Hotel", back_populates="reviews")

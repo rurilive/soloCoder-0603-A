@@ -1,7 +1,13 @@
 from datetime import datetime, date, timedelta
 import random
+import re
 from sqlalchemy.orm import Session
 from .models import PriceCalendar, StayDiscount, Room
+
+SENSITIVE_WORDS = [
+    '脏话1', '脏话2', '脏话3', '敏感词1', '敏感词2', '敏感词3',
+    '违规', '违法', '色情', '暴力', '恐怖', '反动', '邪教'
+]
 
 def generate_order_no():
     today = datetime.now().strftime("%Y%m%d")
@@ -88,3 +94,22 @@ def calculate_final_price(db: Session, room_id: int, check_in: date, check_out: 
         'final_total': original_total,
         'daily_prices': daily_prices
     }
+
+def filter_sensitive_words(text: str) -> str:
+    if not text:
+        return text
+    
+    for word in SENSITIVE_WORDS:
+        text = re.sub(re.escape(word), '*' * len(word), text, flags=re.IGNORECASE)
+    
+    return text
+
+def contains_sensitive_words(text: str) -> bool:
+    if not text:
+        return False
+    
+    for word in SENSITIVE_WORDS:
+        if re.search(re.escape(word), text, re.IGNORECASE):
+            return True
+    
+    return False

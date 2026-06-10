@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from datetime import date
 
 from ..database import get_db
-from ..models import Hotel, Room, Order
-from ..schemas import Hotel as HotelSchema, HotelCreate, HotelUpdate, Room as RoomSchema
+from ..models import Hotel, Room, Order, Review
+from ..schemas import Hotel as HotelSchema, HotelCreate, HotelUpdate, Room as RoomSchema, HotelWithRating
 
 router = APIRouter()
 
@@ -41,7 +42,23 @@ def get_hotels(
     hotels = query.offset(offset).limit(limit).all()
     return hotels
 
-@router.get("/hotels/{hotel_id}", response_model=HotelSchema)
+@router.get("/hotels/{hotel_id}", response_model=HotelWithRating)
 def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
-    return hotel
+    
+    rating_data = db.query(
+        func.avg(Review.rating).label('average_rating'),
+        func.count(Review.id).label('review_count')
+    ).filter(
+        Review.hotel_id == hotel_id,
+        Review.status == "approved"
+    ).first()
+    
+    result = {
+        **hotel.__dict__,
+        'average_rating': round(rating_data.average_rating, 1) if rating_data.average_rating else None,
+        'review_count': rating_data.review_count if rating_data.review_count else 0,
+        'rooms': hotel.rooms
+    }
+    
+    return result

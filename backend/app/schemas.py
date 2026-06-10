@@ -158,3 +158,46 @@ class StatsResponse(BaseModel):
     confirmed_orders: int
     cancelled_orders: int
     completed_orders: int
+
+class ReviewBase(BaseModel):
+    rating: int
+    comment: Optional[str] = None
+
+class ReviewCreate(ReviewBase):
+    order_id: int
+
+class ReviewReply(BaseModel):
+    reply: str
+
+class ReviewStatusUpdate(BaseModel):
+    status: str
+
+class Review(ReviewBase):
+    id: int
+    order_id: int
+    hotel_id: int
+    status: str
+    reply: Optional[str] = None
+    reply_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class HotelRating(BaseModel):
+    hotel_id: int
+    average_rating: Optional[float] = None
+    review_count: int
+
+class HotelWithRating(HotelBase):
+    id: int
+    min_price: float
+    created_at: datetime
+    updated_at: datetime
+    rooms: List[Room] = []
+    average_rating: Optional[float] = None
+    review_count: int
+
+    class Config:
+        orm_mode = True
