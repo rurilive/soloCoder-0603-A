@@ -20,6 +20,8 @@ class Hotel(Base):
     
     rooms = relationship("Room", back_populates="hotel", cascade="all, delete")
     orders = relationship("Order", back_populates="hotel")
+    price_calendars = relationship("PriceCalendar", back_populates="room", cascade="all, delete")
+    stay_discounts = relationship("StayDiscount", back_populates="room", cascade="all, delete")
 
 class Room(Base):
     __tablename__ = "rooms"
@@ -37,6 +39,33 @@ class Room(Base):
     
     hotel = relationship("Hotel", back_populates="rooms")
     orders = relationship("Order", back_populates="room")
+    price_calendars = relationship("PriceCalendar", back_populates="room", cascade="all, delete")
+    stay_discounts = relationship("StayDiscount", back_populates="room", cascade="all, delete")
+
+class PriceCalendar(Base):
+    __tablename__ = "price_calendars"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"))
+    date = Column(Date, index=True)
+    price = Column(Float)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    room = relationship("Room", back_populates="price_calendars")
+
+class StayDiscount(Base):
+    __tablename__ = "stay_discounts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"))
+    min_nights = Column(Integer)
+    discount_percent = Column(Float)
+    start_date = Column(Date)
+    end_date = Column(Date)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    room = relationship("Room", back_populates="stay_discounts")
 
 class Order(Base):
     __tablename__ = "orders"

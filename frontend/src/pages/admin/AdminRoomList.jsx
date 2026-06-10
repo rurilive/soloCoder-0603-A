@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Table, Button, message, Popconfirm } from 'antd';
-import { Plus, Edit, Trash2 } from '@ant-design/icons';
+import { Plus, Edit, Trash2, Calendar, Percent } from '@ant-design/icons';
 import { hotelApi, roomApi } from '../../api';
 
 function AdminRoomList() {
@@ -65,10 +65,18 @@ function AdminRoomList() {
       title: '操作',
       key: 'action',
       render: (_, record) => (
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <Button type="link" onClick={() => navigate(`/admin/rooms/${record.id}/edit`)}>
             <Edit className="mr-1" />
             编辑
+          </Button>
+          <Button type="link" onClick={() => navigate(`/admin/hotels/${id}/rooms/${record.id}/price-calendar`)}>
+            <Calendar className="mr-1" />
+            价格日历
+          </Button>
+          <Button type="link" onClick={() => navigate(`/admin/hotels/${id}/rooms/${record.id}/stay-discount`)}>
+            <Percent className="mr-1" />
+            连住优惠
           </Button>
           <Popconfirm
             title="确定删除此房型？"

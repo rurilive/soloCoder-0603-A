@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
-from .routers import hotels, bookings, orders, admin
+from .routers import hotels, bookings, orders, admin, pricing
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,6 +20,7 @@ app.include_router(hotels.router, prefix="/api")
 app.include_router(bookings.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(pricing.router, prefix="/api")
 
 @app.get("/")
 def read_root():

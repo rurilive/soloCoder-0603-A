@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Row, Col, Rate, Modal, Form, Input, DatePicker, message } from 'antd';
-import { MapPin, Wifi, Coffee, Pool, Car, Bed } from '@ant-design/icons';
-import { hotelApi, bookingApi } from '../../api';
+import { MapPin, Wifi, Coffee, Pool, Car, Bed, Calendar, Percent } from '@ant-design/icons';
+import { hotelApi, bookingApi, pricingApi } from '../../api';
 
 function HotelDetail() {
   const { id } = useParams();
@@ -11,6 +11,8 @@ function HotelDetail() {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [isBookingModalVisible, setIsBookingModalVisible] = useState(false);
   const [form] = Form.useForm();
+  const [priceInfo, setPriceInfo] = useState(null);
+  const [isCalculating, setIsCalculating] = useState(false);
 
   useEffect(() => {
     hotelApi.getHotel(id).then((res) => {
@@ -21,10 +23,39 @@ function HotelDetail() {
   const showBookingModal = (room) => {
     setSelectedRoom(room);
     setIsBookingModalVisible(true);
+    setPriceInfo(null);
     form.resetFields();
   };
 
+  const handleDateChange = (values) => {
+    if (selectedRoom && values.check_in && values.check_out) {
+      calculatePrice(values.check_in, values.check_out);
+    }
+  };
+
+  const calculatePrice = (checkIn, checkOut) => {
+    if (!selectedRoom || !checkIn || !checkOut) return;
+    
+    setIsCalculating(true);
+    pricingApi.calculatePrice({
+      room_id: selectedRoom.id,
+      check_in: checkIn.format('YYYY-MM-DD'),
+      check_out: checkOut.format('YYYY-MM-DD'),
+    }).then((res) => {
+      setPriceInfo(res.data);
+      setIsCalculating(false);
+    }).catch(() => {
+      message.error('价格计算失败');
+      setIsCalculating(false);
+    });
+  };
+
   const handleBooking = (values) => {
+    if (!priceInfo) {
+      message.error('请先选择日期并计算价格');
+      return;
+    }
+
     const bookingData = {
       room_id: selectedRoom.id,
       guest_name: values.guest_name,
@@ -141,6 +172,7 @@ function HotelDetail() {
         visible={isBookingModalVisible}
         footer={null}
         onCancel={() => setIsBookingModalVisible(false)}
+        width={600}
       >
         {selectedRoom && (
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
@@ -150,10 +182,41 @@ function HotelDetail() {
           </div>
         )}
         
+        {priceInfo && (
+          <div className="mb-6 p-4 bg-green-50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-600">入住日期:</span>
+              <span className="font-bold">{priceInfo.check_in} ~ {priceInfo.check_out}</span>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-600">入住天数:</span>
+              <span className="font-bold">{priceInfo.nights} 晚</span>
+            </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-600">原价:</span>
+              <span className="line-through text-gray-400">¥{priceInfo.original_total}</span>
+            </div>
+            {priceInfo.discount && (
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-600">
+                  <Percent className="inline mr-1" />
+                  连住优惠 ({priceInfo.discount_percent}%):
+                </span>
+                <span className="text-green-600 font-bold">-¥{priceInfo.discount}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2 border-t border-green-200">
+              <span className="text-lg font-bold">实付金额:</span>
+              <span className="text-red-500 text-2xl font-bold">¥{priceInfo.final_total}</span>
+            </div>
+          </div>
+        )}
+        
         <Form
           form={form}
           layout="vertical"
           onFinish={handleBooking}
+          onValuesChange={handleDateChange}
         >
           <Form.Item
             name="guest_name"
@@ -184,7 +247,7 @@ function HotelDetail() {
             label="入住日期"
             rules={[{ required: true, message: '请选择入住日期' }]}
           >
-            <DatePicker className="w-full" />
+            <DatePicker className="w-full" style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item
@@ -192,7 +255,7 @@ function HotelDetail() {
             label="退房日期"
             rules={[{ required: true, message: '请选择退房日期' }]}
           >
-            <DatePicker className="w-full" />
+            <DatePicker className="w-full" style={{ width: '100%' }} />
           </Form.Item>
 
           <Form.Item name="special_requests" label="特殊要求">
@@ -200,8 +263,13 @@ function HotelDetail() {
           </Form.Item>
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" block>
-              确认预订
+            <Button 
+              type="primary" 
+              htmlType="submit" 
+              block
+              loading={isCalculating}
+            >
+              {isCalculating ? '计算价格中...' : '确认预订'}
             </Button>
           </Form.Item>
         </Form>

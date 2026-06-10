@@ -16,6 +16,8 @@ import AdminHotelForm from './pages/admin/AdminHotelForm';
 import AdminRoomList from './pages/admin/AdminRoomList';
 import AdminRoomForm from './pages/admin/AdminRoomForm';
 import AdminOrderList from './pages/admin/AdminOrderList';
+import AdminPriceCalendar from './pages/admin/AdminPriceCalendar';
+import AdminStayDiscount from './pages/admin/AdminStayDiscount';
 
 function App() {
   return (
@@ -39,6 +41,8 @@ function App() {
             <Route path="/admin/hotels/:id/rooms" element={<AdminRoomList />} />
             <Route path="/admin/hotels/:hotelId/rooms/create" element={<AdminRoomForm />} />
             <Route path="/admin/rooms/:id/edit" element={<AdminRoomForm />} />
+            <Route path="/admin/hotels/:hotelId/rooms/:roomId/price-calendar" element={<AdminPriceCalendar />} />
+            <Route path="/admin/hotels/:hotelId/rooms/:roomId/stay-discount" element={<AdminStayDiscount />} />
             <Route path="/admin/orders" element={<AdminOrderList />} />
           </Routes>
         </main>

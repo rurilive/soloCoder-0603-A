@@ -36,4 +36,25 @@ export const statsApi = {
   getStats: () => api.get('/admin/stats'),
 };
 
+export const priceCalendarApi = {
+  createPriceCalendar: (data) => api.post('/admin/price-calendars', data),
+  batchCreatePriceCalendar: (data) => api.post('/admin/price-calendars/batch', data),
+  getPriceCalendarsByRoom: (roomId) => api.get(`/admin/price-calendars/room/${roomId}`),
+  getPriceCalendar: (id) => api.get(`/admin/price-calendars/${id}`),
+  updatePriceCalendar: (id, data) => api.put(`/admin/price-calendars/${id}`, data),
+  deletePriceCalendar: (id) => api.delete(`/admin/price-calendars/${id}`),
+};
+
+export const stayDiscountApi = {
+  createStayDiscount: (data) => api.post('/admin/stay-discounts', data),
+  getStayDiscountsByRoom: (roomId) => api.get(`/admin/stay-discounts/room/${roomId}`),
+  getStayDiscount: (id) => api.get(`/admin/stay-discounts/${id}`),
+  updateStayDiscount: (id, data) => api.put(`/admin/stay-discounts/${id}`, data),
+  deleteStayDiscount: (id) => api.delete(`/admin/stay-discounts/${id}`),
+};
+
+export const pricingApi = {
+  calculatePrice: (data) => api.post('/pricing/calculate', data),
+};
+
 export default api;

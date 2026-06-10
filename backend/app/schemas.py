@@ -25,6 +25,71 @@ class Room(RoomBase):
     class Config:
         orm_mode = True
 
+class PriceCalendarBase(BaseModel):
+    room_id: int
+    date: date
+    price: float
+
+class PriceCalendarCreate(PriceCalendarBase):
+    pass
+
+class PriceCalendarUpdate(BaseModel):
+    price: float
+
+class PriceCalendar(PriceCalendarBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class PriceCalendarBatchCreate(BaseModel):
+    room_id: int
+    start_date: date
+    end_date: date
+    price: float
+
+class StayDiscountBase(BaseModel):
+    room_id: int
+    min_nights: int
+    discount_percent: float
+    start_date: date
+    end_date: date
+    is_active: Optional[int] = 1
+
+class StayDiscountCreate(StayDiscountBase):
+    pass
+
+class StayDiscountUpdate(BaseModel):
+    min_nights: Optional[int] = None
+    discount_percent: Optional[float] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    is_active: Optional[int] = None
+
+class StayDiscount(StayDiscountBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class PriceCalculationRequest(BaseModel):
+    room_id: int
+    check_in: date
+    check_out: date
+
+class PriceCalculationResponse(BaseModel):
+    room_id: int
+    check_in: date
+    check_out: date
+    nights: int
+    original_total: float
+    discount: Optional[float] = None
+    discount_percent: Optional[float] = None
+    final_total: float
+    daily_prices: List[dict] = []
+
 class HotelBase(BaseModel):
     name: str
     city: str

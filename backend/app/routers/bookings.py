@@ -5,7 +5,7 @@ from datetime import date
 from ..database import get_db
 from ..models import Room, Hotel, Order
 from ..schemas import BookingCreate, Order as OrderSchema
-from ..utils import generate_order_no, calculate_nights, calculate_total_price
+from ..utils import generate_order_no, calculate_nights, calculate_final_price
 
 router = APIRouter()
 
@@ -35,7 +35,8 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
     if active_orders >= room.room_count:
         raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
     
-    total_price = calculate_total_price(room.price_per_night, nights)
+    price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
+    total_price = price_result['final_total']
     order_no = generate_order_no()
     
     new_order = Order(
