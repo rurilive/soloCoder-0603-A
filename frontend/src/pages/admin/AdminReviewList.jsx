@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Button, Row, Col, Rate, Modal, Form, Input, message, Avatar, Space } from 'antd';
-import { CheckCircle, XCircle, MessageSquare, RefreshCw } from '@ant-design/icons';
+import { CheckCircleOutlined, CloseCircleOutlined, MessageOutlined, SyncOutlined } from '@ant-design/icons';
 import { reviewApi } from '../../api';
 
 function AdminReviewList() {
@@ -139,7 +139,7 @@ function AdminReviewList() {
               </Button>
             </div>
             <Button
-              icon={<RefreshCw />}
+              icon={<SyncOutlined />}
               onClick={loadReviews}
               loading={loading}
             >
@@ -215,7 +215,7 @@ function AdminReviewList() {
                               <Button
                                 type="primary"
                                 size="small"
-                                icon={<CheckCircle />}
+                                icon={<CheckCircleOutlined />}
                                 onClick={() => handleApprove(review.id)}
                               >
                                 通过
@@ -223,7 +223,7 @@ function AdminReviewList() {
                               <Button
                                 danger
                                 size="small"
-                                icon={<XCircle />}
+                                icon={<CloseCircleOutlined />}
                                 onClick={() => handleReject(review.id)}
                               >
                                 拒绝
@@ -233,7 +233,7 @@ function AdminReviewList() {
                           {review.status === 'approved' && (
                             <Button
                               size="small"
-                              icon={<MessageSquare />}
+                              icon={<MessageOutlined />}
                               onClick={() => {
                                 setSelectedReview(review);
                                 setReplyModalVisible(true);

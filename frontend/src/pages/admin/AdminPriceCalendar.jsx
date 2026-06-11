@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Form, InputNumber, DatePicker, Table, Modal, message, Popconfirm } from 'antd';
-import { Plus, Edit, Delete, Calendar } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CalendarOutlined } from '@ant-design/icons';
 import { priceCalendarApi, roomApi, hotelApi } from '../../api';
 
 function AdminPriceCalendar() {
@@ -125,7 +125,7 @@ function AdminPriceCalendar() {
         <div className="flex gap-2">
           <Button
             type="text"
-            icon={<Edit />}
+            icon={<EditOutlined />}
             onClick={() => showModal(record)}
           >
             编辑
@@ -134,7 +134,7 @@ function AdminPriceCalendar() {
             title="确定删除该价格设置？"
             onConfirm={() => handleDelete(record.id)}
           >
-            <Button type="text" danger icon={<Delete />}>
+            <Button type="text" danger icon={<DeleteOutlined />}>
               删除
             </Button>
           </Popconfirm>
@@ -158,13 +158,13 @@ function AdminPriceCalendar() {
           <div className="flex gap-2">
             <Button
               type="primary"
-              icon={<Plus />}
+              icon={<PlusOutlined />}
               onClick={showModal}
             >
               添加单天价格
             </Button>
             <Button
-              icon={<Calendar />}
+              icon={<CalendarOutlined />}
               onClick={showBatchModal}
             >
               批量设置日期

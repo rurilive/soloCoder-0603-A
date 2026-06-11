@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, Dropdown, Button } from 'antd';
-import { Hotel, Search, User, Logout } from '@ant-design/icons';
+import { ApartmentOutlined, SearchOutlined, UserOutlined, LogoutOutlined } from '@ant-design/icons';
 
 function Header() {
   const location = useLocation();
@@ -52,14 +52,14 @@ function Header() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Hotel className="text-2xl" />
+              <ApartmentOutlined className="text-2xl" />
               <h1 className="text-xl font-bold">
                 <Link to="/admin/dashboard">酒店预订系统 - 管理后台</Link>
               </h1>
             </div>
             <Dropdown overlay={adminMenu} trigger={['click']}>
               <Button type="text" className="text-white hover:bg-blue-700">
-                菜单 <User />
+                菜单 <UserOutlined />
               </Button>
             </Dropdown>
           </div>
@@ -73,7 +73,7 @@ function Header() {
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <Hotel className="text-2xl" />
+            <ApartmentOutlined className="text-2xl" />
             <h1 className="text-xl font-bold">
               <Link to="/">酒店预订系统</Link>
             </h1>
@@ -81,7 +81,7 @@ function Header() {
           
           <form onSubmit={handleSearch} className="flex-1 max-w-xl mx-8">
             <div className="flex items-center bg-white rounded-lg">
-              <Search className="text-gray-400 ml-3" />
+              <SearchOutlined className="text-gray-400 ml-3" />
               <input
                 type="text"
                 placeholder="搜索酒店名称、城市..."

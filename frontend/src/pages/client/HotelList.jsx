@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Card, Row, Col, Rate, Button, Select, Input, Slider } from 'antd';
-import { MapPin } from '@ant-design/icons';
+import { EnvironmentOutlined } from '@ant-design/icons';
 import { hotelApi } from '../../api';
 
 const { Option } = Select;
@@ -125,7 +125,7 @@ function HotelList() {
                         description={
                           <div>
                             <p className="flex items-center text-gray-500 text-sm mb-1">
-                              <MapPin className="mr-1" />
+                              <EnvironmentOutlined className="mr-1" />
                               {hotel.city} - {hotel.address}
                             </p>
                             <div className="flex items-center justify-between mb-2">

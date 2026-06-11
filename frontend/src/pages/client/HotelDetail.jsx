@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Row, Col, Rate, Modal, Form, Input, DatePicker, message, Avatar } from 'antd';
-import { MapPin, Wifi, Coffee, Pool, Car, Bed, Calendar, Percent, Star, MessageSquare } from '@ant-design/icons';
-import { hotelApi, bookingApi, pricingApi, reviewApi } from '../../api';
+import { EnvironmentOutlined, WifiOutlined, CoffeeOutlined, CarOutlined, CalendarOutlined, PercentageOutlined, StarOutlined, MessageOutlined } from '@ant-design/icons';
+import { hotelApi, bookingApi, pricingApi, reviewApi, captchaApi } from '../../api';
 
 function HotelDetail() {
   const { id } = useParams();
@@ -13,6 +13,8 @@ function HotelDetail() {
   const [form] = Form.useForm();
   const [priceInfo, setPriceInfo] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [captchaImage, setCaptchaImage] = useState(null);
+  const [captchaId, setCaptchaId] = useState(null);
   
   const [reviews, setReviews] = useState([]);
   const [showReviewForm, setShowReviewForm] = useState(false);
@@ -30,11 +32,25 @@ function HotelDetail() {
     });
   }, [id]);
 
+  const loadCaptcha = () => {
+    captchaApi.getCaptcha().then((res) => {
+      const captchaIdHeader = res.headers['x-captcha-id'];
+      if (captchaIdHeader) {
+        setCaptchaId(captchaIdHeader);
+      }
+      const imageUrl = URL.createObjectURL(res.data);
+      setCaptchaImage(imageUrl);
+    }).catch(() => {
+      message.error('验证码加载失败');
+    });
+  };
+
   const showBookingModal = (room) => {
     setSelectedRoom(room);
     setIsBookingModalVisible(true);
     setPriceInfo(null);
     form.resetFields();
+    loadCaptcha();
   };
 
   const handleDateChange = (changedValues, allValues) => {
@@ -68,6 +84,12 @@ function HotelDetail() {
       return;
     }
 
+    const phoneRegex = /^1[3-9]\d{9}$/;
+    if (!phoneRegex.test(values.guest_phone)) {
+      message.error('请输入有效的手机号码');
+      return;
+    }
+
     const bookingData = {
       room_id: selectedRoom.id,
       guest_name: values.guest_name,
@@ -76,6 +98,8 @@ function HotelDetail() {
       check_in: values.check_in.format('YYYY-MM-DD'),
       check_out: values.check_out.format('YYYY-MM-DD'),
       special_requests: values.special_requests,
+      captcha_id: captchaId,
+      captcha_text: values.captcha_text,
     };
 
     bookingApi.createBooking(bookingData).then((res) => {
@@ -84,15 +108,17 @@ function HotelDetail() {
       navigate(`/booking-success/${res.data.id}`);
     }).catch((error) => {
       message.error(error.response?.data?.detail || '预订失败，请重试');
+      loadCaptcha();
+      form.setFieldsValue({ captcha_text: '' });
     });
   };
 
   const getAmenityIcon = (amenity) => {
     const icons = {
-      wifi: <Wifi className="text-blue-500" />,
-      pool: <Pool className="text-blue-500" />,
-      parking: <Car className="text-blue-500" />,
-      breakfast: <Coffee className="text-blue-500" />,
+      wifi: <WifiOutlined className="text-blue-500" />,
+      pool: <CarOutlined className="text-blue-500" />,
+      parking: <CarOutlined className="text-blue-500" />,
+      breakfast: <CoffeeOutlined className="text-blue-500" />,
     };
     return icons[amenity] || null;
   };
@@ -152,7 +178,7 @@ function HotelDetail() {
             </div>
             
             <div className="mt-6 flex items-center text-gray-500">
-              <MapPin className="mr-2" />
+              <EnvironmentOutlined className="mr-2" />
               {hotel.city} - {hotel.address}
             </div>
 
@@ -181,7 +207,7 @@ function HotelDetail() {
               >
                 <div className="flex items-start">
                   <div className="w-24 h-24 bg-gradient-to-br from-blue-300 to-blue-500 rounded-lg flex items-center justify-center mr-4">
-                    <Bed className="text-white text-3xl" />
+                    <CarOutlined className="text-white text-3xl" />
                   </div>
                   <div className="flex-1">
                     <h3 className="font-bold text-lg mb-1">{room.name}</h3>
@@ -212,7 +238,7 @@ function HotelDetail() {
             <div className="flex items-center gap-4">
               <h2 className="text-2xl font-bold">用户评价</h2>
               <div className="flex items-center gap-2">
-                <Star className="text-yellow-500" />
+                <StarOutlined className="text-yellow-500" />
                 <span className="text-xl font-bold">{hotel.average_rating || 0}</span>
                 <span className="text-gray-500">({hotel.review_count}条评价)</span>
               </div>
@@ -220,7 +246,7 @@ function HotelDetail() {
             <Button
               type="primary"
               onClick={() => setShowReviewForm(true)}
-              icon={<MessageSquare />}
+              icon={<MessageOutlined />}
             >
               写评价
             </Button>
@@ -258,7 +284,7 @@ function HotelDetail() {
             {reviews.length === 0 ? (
               <Card>
                 <div className="text-center py-12 text-gray-500">
-                  <MessageSquare className="text-4xl mx-auto mb-4 opacity-50" />
+                  <MessageOutlined className="text-4xl mx-auto mb-4 opacity-50" />
                   <p>暂无评价</p>
                 </div>
               </Card>
@@ -328,7 +354,7 @@ function HotelDetail() {
             {priceInfo.discount && (
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-600">
-                  <Percent className="inline mr-1" />
+                  <PercentageOutlined className="inline mr-1" />
                   连住优惠 ({priceInfo.discount_percent}%):
                 </span>
                 <span className="text-green-600 font-bold">-¥{priceInfo.discount}</span>
@@ -389,6 +415,28 @@ function HotelDetail() {
 
           <Form.Item name="special_requests" label="特殊要求">
             <Input.TextArea placeholder="如有特殊要求，请在此说明" />
+          </Form.Item>
+
+          <Form.Item
+            name="captcha_text"
+            label="验证码"
+            rules={[{ required: true, message: '请输入验证码' }]}
+          >
+            <div className="flex items-center gap-2">
+              <Input placeholder="请输入验证码" style={{ flex: 1 }} />
+              <div className="relative">
+                {captchaImage && (
+                  <img
+                    src={captchaImage}
+                    alt="验证码"
+                    className="w-32 h-10 object-contain cursor-pointer border rounded"
+                    onClick={loadCaptcha}
+                    title="点击刷新"
+                  />
+                )}
+              </div>
+            </div>
+            <span className="text-gray-400 text-sm">点击验证码图片可刷新</span>
           </Form.Item>
 
           <Form.Item>

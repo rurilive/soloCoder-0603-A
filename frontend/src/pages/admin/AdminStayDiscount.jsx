@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, Button, Form, InputNumber, DatePicker, Table, Modal, message, Popconfirm, Switch } from 'antd';
-import { Plus, Edit, Delete, Percent } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, PercentageOutlined } from '@ant-design/icons';
 import { stayDiscountApi, roomApi, hotelApi } from '../../api';
 
 function AdminStayDiscount() {
@@ -141,7 +141,7 @@ function AdminStayDiscount() {
           />
           <Button
             type="text"
-            icon={<Edit />}
+            icon={<EditOutlined />}
             onClick={() => showModal(record)}
           >
             编辑
@@ -150,7 +150,7 @@ function AdminStayDiscount() {
             title="确定删除该优惠规则？"
             onConfirm={() => handleDelete(record.id)}
           >
-            <Button type="text" danger icon={<Delete />}>
+            <Button type="text" danger icon={<DeleteOutlined />}>
               删除
             </Button>
           </Popconfirm>
@@ -174,7 +174,7 @@ function AdminStayDiscount() {
           <div className="flex gap-2">
             <Button
               type="primary"
-              icon={<Plus />}
+              icon={<PlusOutlined />}
               onClick={showModal}
             >
               添加优惠规则
@@ -219,7 +219,7 @@ function AdminStayDiscount() {
               label="优惠折扣 (%)"
               rules={[{ required: true, message: '请输入折扣百分比' }]}
             >
-              <InputNumber className="w-full" prefix={<Percent />} min={1} max={99} />
+              <InputNumber className="w-full" prefix={<PercentageOutlined />} min={1} max={99} />
             </Form.Item>
 
             <Form.Item

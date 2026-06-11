@@ -123,6 +123,8 @@ class BookingCreate(BaseModel):
     check_in: date
     check_out: date
     special_requests: Optional[str] = None
+    captcha_id: Optional[str] = None
+    captcha_text: Optional[str] = None
 
 class OrderBase(BaseModel):
     order_no: str

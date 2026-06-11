@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Tag, message, Popconfirm } from 'antd';
-import { Plus, Edit, Trash2, Bed } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CarOutlined } from '@ant-design/icons';
 import { hotelApi } from '../../api';
 
 function AdminHotelList() {
@@ -70,11 +70,11 @@ function AdminHotelList() {
       render: (_, record) => (
         <div className="flex gap-2">
           <Button type="link" onClick={() => navigate(`/admin/hotels/${record.id}/rooms`)}>
-            <Bed className="mr-1" />
+            <CarOutlined className="mr-1" />
             房型管理
           </Button>
           <Button type="link" onClick={() => navigate(`/admin/hotels/${record.id}/edit`)}>
-            <Edit className="mr-1" />
+            <EditOutlined className="mr-1" />
             编辑
           </Button>
           <Popconfirm
@@ -84,7 +84,7 @@ function AdminHotelList() {
             cancelText="取消"
           >
             <Button type="link" danger>
-              <Trash2 className="mr-1" />
+              <DeleteOutlined className="mr-1" />
               删除
             </Button>
           </Popconfirm>
@@ -99,7 +99,7 @@ function AdminHotelList() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold">酒店管理</h2>
           <Button type="primary" onClick={() => navigate('/admin/hotels/create')}>
-            <Plus className="mr-1" />
+            <PlusOutlined className="mr-1" />
             添加酒店
           </Button>
         </div>

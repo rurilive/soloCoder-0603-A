@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Card, Button, Row, Col, CheckCircle } from 'antd';
+import { Card, Button, Row, Col } from 'antd';
+import { CheckCircleOutlined } from '@ant-design/icons';
 import { orderApi } from '../../api';
 
 function BookingSuccess() {
@@ -22,7 +23,7 @@ function BookingSuccess() {
       <div className="max-w-4xl mx-auto px-4">
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="bg-gradient-to-r from-green-500 to-green-600 text-white py-12 text-center">
-            <CheckCircle className="text-6xl mx-auto mb-4" />
+            <CheckCircleOutlined className="text-6xl mx-auto mb-4" />
             <h1 className="text-3xl font-bold mb-2">预订成功！</h1>
             <p className="text-green-100">您的订单已确认，请注意查收确认邮件</p>
           </div>

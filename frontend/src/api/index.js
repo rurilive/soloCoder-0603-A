@@ -57,6 +57,10 @@ export const pricingApi = {
   calculatePrice: (data) => api.post('/pricing/calculate', data),
 };
 
+export const captchaApi = {
+  getCaptcha: () => api.get('/captcha/image', { responseType: 'blob' }),
+};
+
 export const reviewApi = {
   createReview: (data) => api.post('/reviews', data),
   getReviews: (params) => api.get('/reviews', { params }),

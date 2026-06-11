@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Button, Row, Col, Rate, Search, Calendar, MapPin } from 'antd';
+import { Card, Button, Row, Col, Rate } from 'antd';
+import { SearchOutlined, CalendarOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { hotelApi } from '../../api';
 
 const popularCities = ['北京', '上海', '广州', '深圳', '杭州', '成都'];
@@ -39,7 +40,7 @@ function Home() {
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">目的地</label>
                 <div className="flex items-center">
-                  <Search className="text-gray-400 mr-2" />
+                  <SearchOutlined className="text-gray-400 mr-2" />
                   <input
                     type="text"
                     placeholder="城市、酒店名称"
@@ -53,7 +54,7 @@ function Home() {
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">入住日期</label>
                 <div className="flex items-center">
-                  <Calendar className="text-gray-400 mr-2" />
+                  <CalendarOutlined className="text-gray-400 mr-2" />
                   <input
                     type="date"
                     value={checkIn}
@@ -66,7 +67,7 @@ function Home() {
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">退房日期</label>
                 <div className="flex items-center">
-                  <Calendar className="text-gray-400 mr-2" />
+                  <CalendarOutlined className="text-gray-400 mr-2" />
                   <input
                     type="date"
                     value={checkOut}
@@ -101,7 +102,7 @@ function Home() {
                 to={`/hotels?city=${encodeURIComponent(cityName)}`}
                 className="bg-white px-6 py-3 rounded-lg shadow hover:shadow-md transition cursor-pointer"
               >
-                <MapPin className="inline-block mr-2 text-blue-500" />
+                <EnvironmentOutlined className="inline-block mr-2 text-blue-500" />
                 {cityName}
               </Link>
             ))}
@@ -137,7 +138,7 @@ function Home() {
                     description={
                       <div>
                         <p className="flex items-center text-gray-500 text-sm mb-1">
-                          <MapPin className="mr-1" />
+                          <EnvironmentOutlined className="mr-1" />
                           {hotel.city}
                         </p>
                         <div className="flex items-center justify-between">
