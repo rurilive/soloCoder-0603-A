@@ -1,55 +1,48 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import './index.css';
-
+import { Routes, Route } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Header from './components/Header';
-import Home from './pages/client/Home';
-import HotelList from './pages/client/HotelList';
-import HotelDetail from './pages/client/HotelDetail';
-import BookingSuccess from './pages/client/BookingSuccess';
-import OrderList from './pages/client/OrderList';
-import OrderDetail from './pages/client/OrderDetail';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import EventList from './pages/EventList';
+import EventDetail from './pages/EventDetail';
+import CreateEvent from './pages/CreateEvent';
+import MyEvents from './pages/MyEvents';
+import CheckIn from './pages/CheckIn';
 
-import AdminLogin from './pages/admin/AdminLogin';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminHotelList from './pages/admin/AdminHotelList';
-import AdminHotelForm from './pages/admin/AdminHotelForm';
-import AdminRoomList from './pages/admin/AdminRoomList';
-import AdminRoomForm from './pages/admin/AdminRoomForm';
-import AdminOrderList from './pages/admin/AdminOrderList';
-import AdminPriceCalendar from './pages/admin/AdminPriceCalendar';
-import AdminStayDiscount from './pages/admin/AdminStayDiscount';
-import AdminReviewList from './pages/admin/AdminReviewList';
+const AppContent = () => {
+  const { loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      <Header />
+      <main>
+        <Routes>
+          <Route path="/" element={<EventList />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/event/:id" element={<EventDetail />} />
+          <Route path="/create-event" element={<CreateEvent />} />
+          <Route path="/my-events" element={<MyEvents />} />
+          <Route path="/checkin" element={<CheckIn />} />
+        </Routes>
+      </main>
+    </div>
+  );
+};
 
 function App() {
   return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <main>
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/hotels" element={<HotelList />} />
-            <Route path="/hotels/:id" element={<HotelDetail />} />
-            <Route path="/booking-success/:id" element={<BookingSuccess />} />
-            <Route path="/orders" element={<OrderList />} />
-            <Route path="/orders/:id" element={<OrderDetail />} />
-            
-            <Route path="/admin/login" element={<AdminLogin />} />
-            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            <Route path="/admin/hotels" element={<AdminHotelList />} />
-            <Route path="/admin/hotels/create" element={<AdminHotelForm />} />
-            <Route path="/admin/hotels/:id/edit" element={<AdminHotelForm />} />
-            <Route path="/admin/hotels/:id/rooms" element={<AdminRoomList />} />
-            <Route path="/admin/hotels/:hotelId/rooms/create" element={<AdminRoomForm />} />
-            <Route path="/admin/rooms/:id/edit" element={<AdminRoomForm />} />
-            <Route path="/admin/hotels/:hotelId/rooms/:roomId/price-calendar" element={<AdminPriceCalendar />} />
-            <Route path="/admin/hotels/:hotelId/rooms/:roomId/stay-discount" element={<AdminStayDiscount />} />
-            <Route path="/admin/orders" element={<AdminOrderList />} />
-            <Route path="/admin/reviews" element={<AdminReviewList />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

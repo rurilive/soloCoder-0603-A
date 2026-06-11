@@ -1,133 +1,51 @@
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, JSON, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
 
-class Hotel(Base):
-    __tablename__ = "hotels"
+class User(Base):
+    __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    city = Column(String, index=True)
-    address = Column(String)
-    description = Column(Text)
-    star_rating = Column(Integer)
-    image_url = Column(String)
-    amenities = Column(JSON)
-    min_price = Column(Float)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_organizer = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
-    rooms = relationship("Room", back_populates="hotel", cascade="all, delete")
-    orders = relationship("Order", back_populates="hotel")
-    reviews = relationship("Review", back_populates="hotel")
+    events = relationship("Event", back_populates="organizer")
+    registrations = relationship("Registration", back_populates="user")
 
-class Room(Base):
-    __tablename__ = "rooms"
+class Event(Base):
+    __tablename__ = "events"
     
     id = Column(Integer, primary_key=True, index=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.id"))
-    name = Column(String)
-    description = Column(Text)
-    price_per_night = Column(Float)
-    max_guests = Column(Integer)
-    bed_type = Column(String)
-    room_count = Column(Integer)
-    image_url = Column(String)
-    created_at = Column(DateTime, default=datetime.now)
-    
-    hotel = relationship("Hotel", back_populates="rooms")
-    orders = relationship("Order", back_populates="room")
-    price_calendars = relationship("PriceCalendar", back_populates="room", cascade="all, delete")
-    stay_discounts = relationship("StayDiscount", back_populates="room", cascade="all, delete")
-
-class PriceCalendar(Base):
-    __tablename__ = "price_calendars"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"))
-    date = Column(Date, index=True)
-    price = Column(Float)
-    created_at = Column(DateTime, default=datetime.now)
-    
-    room = relationship("Room", back_populates="price_calendars")
-
-class StayDiscount(Base):
-    __tablename__ = "stay_discounts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"))
-    min_nights = Column(Integer)
-    discount_percent = Column(Float)
-    start_date = Column(Date)
-    end_date = Column(Date)
-    is_active = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.now)
-    
-    room = relationship("Room", back_populates="stay_discounts")
-
-class Order(Base):
-    __tablename__ = "orders"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    order_no = Column(String, unique=True, index=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.id"))
-    room_id = Column(Integer, ForeignKey("rooms.id"))
-    guest_name = Column(String)
-    guest_phone = Column(String)
-    guest_email = Column(String)
-    check_in = Column(Date)
-    check_out = Column(Date)
-    nights = Column(Integer)
-    total_price = Column(Float)
-    status = Column(String)
-    locked_until = Column(DateTime)
-    special_requests = Column(Text)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    
-    hotel = relationship("Hotel", back_populates="orders")
-    room = relationship("Room", back_populates="orders")
-    review = relationship("Review", back_populates="order", uselist=False)
-
-class RoomInventoryLock(Base):
-    __tablename__ = "room_inventory_locks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
-    check_in = Column(Date, nullable=False)
-    check_out = Column(Date, nullable=False)
-    locked_at = Column(DateTime, default=datetime.now)
-    locked_until = Column(DateTime)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
-    
-    room = relationship("Room")
-    order = relationship("Order")
-
-class RoomLock(Base):
-    __tablename__ = "room_locks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    room_id = Column(Integer, ForeignKey("rooms.id"), unique=True, nullable=False)
-    locked_at = Column(DateTime, nullable=True)
-    locked_until = Column(DateTime, nullable=True)
-    lock_owner = Column(String, nullable=True)
-    
-    room = relationship("Room")
-
-class Review(Base):
-    __tablename__ = "reviews"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), unique=True)
-    hotel_id = Column(Integer, ForeignKey("hotels.id"))
-    rating = Column(Integer)
-    comment = Column(Text)
+    title = Column(String, index=True, nullable=False)
+    description = Column(String)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    location = Column(String, nullable=False)
+    max_capacity = Column(Integer, nullable=False)
+    registration_form = Column(JSON)
     status = Column(String, default="pending")
-    reply = Column(Text)
-    reply_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    organizer_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
     
-    order = relationship("Order", back_populates="review")
-    hotel = relationship("Hotel", back_populates="reviews")
+    organizer = relationship("User", back_populates="events")
+    registrations = relationship("Registration", back_populates="event")
+
+class Registration(Base):
+    __tablename__ = "registrations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    event_id = Column(Integer, ForeignKey("events.id"))
+    ticket_code = Column(String, unique=True, index=True)
+    check_in = Column(Boolean, default=False)
+    check_in_time = Column(DateTime)
+    form_data = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="registrations")
+    event = relationship("Event", back_populates="registrations")

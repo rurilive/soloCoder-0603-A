@@ -1,115 +1,47 @@
-from datetime import datetime, date, timedelta
-import random
-import re
-from sqlalchemy.orm import Session
-from .models import PriceCalendar, StayDiscount, Room
+import qrcode
+from io import BytesIO
+from base64 import b64encode
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from typing import Optional
 
-SENSITIVE_WORDS = [
-    '脏话1', '脏话2', '脏话3', '敏感词1', '敏感词2', '敏感词3',
-    '违规', '违法', '色情', '暴力', '恐怖', '反动', '邪教'
-]
+SECRET_KEY = "your-secret-key-keep-it-safe-change-in-production"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-def generate_order_no():
-    today = datetime.now().strftime("%Y%m%d")
-    random_suffix = ''.join(random.choices('0123456789', k=4))
-    return f"HTL{today}{random_suffix}"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def calculate_nights(check_in: date, check_out: date) -> int:
-    return (check_out - check_in).days
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
-def calculate_total_price(price_per_night: float, nights: int) -> float:
-    return round(price_per_night * nights, 2)
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
 
-def get_price_for_date(db: Session, room_id: int, target_date: date) -> float:
-    calendar_price = db.query(PriceCalendar).filter(
-        PriceCalendar.room_id == room_id,
-        PriceCalendar.date == target_date
-    ).first()
-    
-    if calendar_price:
-        return calendar_price.price
-    
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if room:
-        return room.price_per_night
-    
-    return 0.0
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
-def get_daily_prices(db: Session, room_id: int, check_in: date, check_out: date) -> list:
-    daily_prices = []
-    current_date = check_in
-    
-    while current_date < check_out:
-        price = get_price_for_date(db, room_id, current_date)
-        daily_prices.append({
-            'date': current_date.strftime('%Y-%m-%d'),
-            'price': price
-        })
-        current_date += timedelta(days=1)
-    
-    return daily_prices
+def generate_ticket_code() -> str:
+    import uuid
+    return str(uuid.uuid4()).replace("-", "").upper()[:12]
 
-def calculate_original_total(db: Session, room_id: int, check_in: date, check_out: date) -> float:
-    daily_prices = get_daily_prices(db, room_id, check_in, check_out)
-    return round(sum(item['price'] for item in daily_prices), 2)
-
-def get_applicable_discount(db: Session, room_id: int, nights: int, check_in: date, check_out: date) -> float:
-    discounts = db.query(StayDiscount).filter(
-        StayDiscount.room_id == room_id,
-        StayDiscount.is_active == 1,
-        StayDiscount.min_nights <= nights,
-        StayDiscount.start_date <= check_in,
-        StayDiscount.end_date >= check_out
-    ).order_by(StayDiscount.min_nights.desc()).all()
-    
-    if discounts:
-        return discounts[0]
-    
-    return None
-
-def calculate_final_price(db: Session, room_id: int, check_in: date, check_out: date) -> dict:
-    nights = calculate_nights(check_in, check_out)
-    daily_prices = get_daily_prices(db, room_id, check_in, check_out)
-    original_total = round(sum(item['price'] for item in daily_prices), 2)
-    
-    discount = get_applicable_discount(db, room_id, nights, check_in, check_out)
-    
-    if discount:
-        discount_amount = round(original_total * (discount.discount_percent / 100), 2)
-        final_total = round(original_total - discount_amount, 2)
-        return {
-            'nights': nights,
-            'original_total': original_total,
-            'discount': discount_amount,
-            'discount_percent': discount.discount_percent,
-            'final_total': final_total,
-            'daily_prices': daily_prices
-        }
-    
-    return {
-        'nights': nights,
-        'original_total': original_total,
-        'discount': None,
-        'discount_percent': None,
-        'final_total': original_total,
-        'daily_prices': daily_prices
-    }
-
-def filter_sensitive_words(text: str) -> str:
-    if not text:
-        return text
-    
-    for word in SENSITIVE_WORDS:
-        text = re.sub(re.escape(word), '*' * len(word), text, flags=re.IGNORECASE)
-    
-    return text
-
-def contains_sensitive_words(text: str) -> bool:
-    if not text:
-        return False
-    
-    for word in SENSITIVE_WORDS:
-        if re.search(re.escape(word), text, re.IGNORECASE):
-            return True
-    
-    return False
+def generate_qr_code(data: str) -> str:
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    return b64encode(buffer.getvalue()).decode("utf-8")
