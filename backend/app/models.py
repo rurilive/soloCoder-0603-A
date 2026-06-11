@@ -90,6 +90,20 @@ class Order(Base):
     room = relationship("Room", back_populates="orders")
     review = relationship("Review", back_populates="order", uselist=False)
 
+class RoomInventoryLock(Base):
+    __tablename__ = "room_inventory_locks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    check_in = Column(Date, nullable=False)
+    check_out = Column(Date, nullable=False)
+    locked_at = Column(DateTime, default=datetime.now)
+    locked_until = Column(DateTime)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    
+    room = relationship("Room")
+    order = relationship("Order")
+
 class Review(Base):
     __tablename__ = "reviews"
     

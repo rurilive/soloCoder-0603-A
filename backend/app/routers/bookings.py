@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 import re
 
 from ..database import get_db
-from ..models import Room, Hotel, Order
+from ..models import Room, Hotel, Order, RoomInventoryLock
 from ..schemas import BookingCreate, Order as OrderSchema
 from ..utils import generate_order_no, calculate_nights, calculate_final_price
 from ..limiter import limiter
@@ -66,6 +66,20 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         
         now = datetime.now()
         
+        locked_until = now + timedelta(minutes=LOCK_DURATION_MINUTES)
+        
+        active_lock_count = db.query(RoomInventoryLock).filter(
+            and_(
+                RoomInventoryLock.room_id == booking.room_id,
+                RoomInventoryLock.check_in < booking.check_out,
+                RoomInventoryLock.check_out > booking.check_in,
+                RoomInventoryLock.locked_until > now
+            )
+        ).count()
+        
+        if active_lock_count > 0:
+            raise HTTPException(status_code=400, detail="Room is temporarily locked, please try again later")
+        
         occupied_count = db.query(Order).filter(
             and_(
                 Order.room_id == booking.room_id,
@@ -79,14 +93,24 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
             )
         ).count()
         
-        if occupied_count >= room.room_count:
+        total_occupied = occupied_count + active_lock_count
+        
+        if total_occupied >= room.room_count:
             raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
+        
+        inventory_lock = RoomInventoryLock(
+            room_id=booking.room_id,
+            check_in=booking.check_in,
+            check_out=booking.check_out,
+            locked_at=now,
+            locked_until=locked_until
+        )
+        db.add(inventory_lock)
+        db.flush()
         
         price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
         total_price = price_result['final_total']
         order_no = generate_order_no()
-        
-        locked_until = now + timedelta(minutes=LOCK_DURATION_MINUTES)
         
         new_order = Order(
             order_no=order_no,
@@ -105,6 +129,10 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         )
         
         db.add(new_order)
+        db.flush()
+        
+        inventory_lock.order_id = new_order.id
+        
         db.commit()
         db.refresh(new_order)
         
@@ -131,6 +159,11 @@ def confirm_booking(order_id: int, db: Session = Depends(get_db)):
     
     order.status = "confirmed"
     order.locked_until = None
+    
+    db.query(RoomInventoryLock).filter(
+        RoomInventoryLock.order_id == order_id
+    ).delete()
+    
     db.commit()
     db.refresh(order)
     
@@ -148,6 +181,11 @@ def release_booking(order_id: int, db: Session = Depends(get_db)):
     
     order.status = "cancelled"
     order.locked_until = None
+    
+    db.query(RoomInventoryLock).filter(
+        RoomInventoryLock.order_id == order_id
+    ).delete()
+    
     db.commit()
     db.refresh(order)
     

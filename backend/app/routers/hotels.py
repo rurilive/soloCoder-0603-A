@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import date, datetime
 
 from ..database import get_db
-from ..models import Hotel, Room, Order, Review
+from ..models import Hotel, Room, Order, Review, RoomInventoryLock
 from ..schemas import Hotel as HotelSchema, HotelCreate, HotelUpdate, Room as RoomSchema, HotelWithRating, HotelWithRoomAvailability, RoomWithAvailability
 
 router = APIRouter()
@@ -96,7 +96,17 @@ def get_hotel_with_availability(
             )
         ).count()
         
-        available_count = max(0, room.room_count - occupied_count)
+        lock_count = db.query(RoomInventoryLock).filter(
+            and_(
+                RoomInventoryLock.room_id == room.id,
+                RoomInventoryLock.check_in < check_out,
+                RoomInventoryLock.check_out > check_in,
+                RoomInventoryLock.locked_until > now
+            )
+        ).count()
+        
+        total_occupied = occupied_count + lock_count
+        available_count = max(0, room.room_count - total_occupied)
         rooms_with_availability.append({
             **room.__dict__,
             'available_count': available_count

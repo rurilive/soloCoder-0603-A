@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from ..database import get_db
-from ..models import Order
+from ..models import Order, RoomInventoryLock
 from ..schemas import Order as OrderSchema, OrderStatusUpdate
 
 router = APIRouter()
@@ -50,11 +50,12 @@ def update_order_status(order_id: int, update: OrderStatusUpdate, db: Session = 
     
     order.status = update.status
     
-    if update.status == "cancelled":
+    if update.status == "cancelled" or update.status == "confirmed":
         order.locked_until = None
-    
-    if update.status == "confirmed":
-        order.locked_until = None
+        
+        db.query(RoomInventoryLock).filter(
+            RoomInventoryLock.order_id == order_id
+        ).delete()
     
     db.commit()
     db.refresh(order)
