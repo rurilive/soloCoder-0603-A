@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 from datetime import date, datetime, timedelta
 import re
 
@@ -47,14 +48,6 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
     if not limiter.verify_captcha(booking.captcha_id, booking.captcha_text):
         raise HTTPException(status_code=400, detail="Invalid captcha")
     
-    room = db.query(Room).filter(Room.id == booking.room_id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel:
-        raise HTTPException(status_code=404, detail="Hotel not found")
-    
     if booking.check_in >= booking.check_out:
         raise HTTPException(status_code=400, detail="Check-out date must be after check-in date")
     
@@ -62,44 +55,66 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
     if nights <= 0:
         raise HTTPException(status_code=400, detail="Invalid date range")
     
-    occupied_count = db.query(Order).filter(
-        Order.room_id == booking.room_id,
-        Order.status.in_(["confirmed", "pending"]),
-        (Order.check_in < booking.check_out) & (Order.check_out > booking.check_in)
-    ).filter(
-        (Order.locked_until > datetime.now()) | (Order.status == "confirmed")
-    ).count()
-    
-    if occupied_count >= room.room_count:
-        raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
-    
-    price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
-    total_price = price_result['final_total']
-    order_no = generate_order_no()
-    
-    locked_until = datetime.now() + timedelta(minutes=LOCK_DURATION_MINUTES)
-    
-    new_order = Order(
-        order_no=order_no,
-        hotel_id=room.hotel_id,
-        room_id=booking.room_id,
-        guest_name=booking.guest_name,
-        guest_phone=booking.guest_phone,
-        guest_email=booking.guest_email,
-        check_in=booking.check_in,
-        check_out=booking.check_out,
-        nights=nights,
-        total_price=total_price,
-        status="pending",
-        locked_until=locked_until,
-        special_requests=booking.special_requests
-    )
-    
-    db.add(new_order)
-    db.commit()
-    db.refresh(new_order)
-    
-    return new_order
+    try:
+        room = db.query(Room).filter(Room.id == booking.room_id).with_for_update().first()
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        
+        hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+        if not hotel:
+            raise HTTPException(status_code=404, detail="Hotel not found")
+        
+        now = datetime.now()
+        
+        occupied_count = db.query(Order).filter(
+            and_(
+                Order.room_id == booking.room_id,
+                Order.status.in_(["confirmed", "pending"]),
+                Order.check_in < booking.check_out,
+                Order.check_out > booking.check_in,
+                or_(
+                    Order.status == "confirmed",
+                    Order.locked_until > now
+                )
+            )
+        ).count()
+        
+        if occupied_count >= room.room_count:
+            raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
+        
+        price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
+        total_price = price_result['final_total']
+        order_no = generate_order_no()
+        
+        locked_until = now + timedelta(minutes=LOCK_DURATION_MINUTES)
+        
+        new_order = Order(
+            order_no=order_no,
+            hotel_id=room.hotel_id,
+            room_id=booking.room_id,
+            guest_name=booking.guest_name,
+            guest_phone=booking.guest_phone,
+            guest_email=booking.guest_email,
+            check_in=booking.check_in,
+            check_out=booking.check_out,
+            nights=nights,
+            total_price=total_price,
+            status="pending",
+            locked_until=locked_until,
+            special_requests=booking.special_requests
+        )
+        
+        db.add(new_order)
+        db.commit()
+        db.refresh(new_order)
+        
+        return new_order
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Booking failed: {str(e)}")
 
 @router.post("/bookings/{order_id}/confirm")
 def confirm_booking(order_id: int, db: Session = Depends(get_db)):

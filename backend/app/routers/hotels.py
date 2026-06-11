@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_, or_
 from typing import List, Optional
 from datetime import date, datetime
 
@@ -80,15 +80,20 @@ def get_hotel_with_availability(
         Review.status == "approved"
     ).first()
     
+    now = datetime.now()
     rooms_with_availability = []
     for room in hotel.rooms:
         occupied_count = db.query(Order).filter(
-            Order.room_id == room.id,
-            Order.status.in_(["confirmed", "pending"]),
-            Order.locked_until.isnot(None) | (Order.status == "confirmed"),
-            (Order.check_in < check_out) & (Order.check_out > check_in)
-        ).filter(
-            (Order.locked_until > datetime.now()) | (Order.status == "confirmed")
+            and_(
+                Order.room_id == room.id,
+                Order.status.in_(["confirmed", "pending"]),
+                Order.check_in < check_out,
+                Order.check_out > check_in,
+                or_(
+                    Order.status == "confirmed",
+                    Order.locked_until > now
+                )
+            )
         ).count()
         
         available_count = max(0, room.room_count - occupied_count)
