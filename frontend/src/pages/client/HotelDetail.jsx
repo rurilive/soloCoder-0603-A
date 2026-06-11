@@ -417,13 +417,15 @@ function HotelDetail() {
             <Input.TextArea placeholder="如有特殊要求，请在此说明" />
           </Form.Item>
 
-          <Form.Item
-            name="captcha_text"
-            label="验证码"
-            rules={[{ required: true, message: '请输入验证码' }]}
-          >
+          <Form.Item label="验证码">
             <div className="flex items-center gap-2">
-              <Input placeholder="请输入验证码" style={{ flex: 1 }} />
+              <Form.Item
+                name="captcha_text"
+                rules={[{ required: true, message: '请输入验证码' }]}
+                noStyle
+              >
+                <Input placeholder="请输入验证码" style={{ flex: 1 }} />
+              </Form.Item>
               <div className="relative">
                 {captchaImage && (
                   <img

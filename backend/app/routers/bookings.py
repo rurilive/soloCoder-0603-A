@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import date
 import re
@@ -15,12 +15,22 @@ def validate_phone(phone: str) -> bool:
     pattern = r'^1[3-9]\d{9}$'
     return re.match(pattern, phone) is not None
 
+def get_client_ip(request: Request) -> str:
+    x_forwarded_for = request.headers.get("X-Forwarded-For")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    x_real_ip = request.headers.get("X-Real-IP")
+    if x_real_ip:
+        return x_real_ip
+    return request.client.host
+
 @router.post("/bookings", response_model=OrderSchema)
-def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
+def create_booking(booking: BookingCreate, db: Session = Depends(get_db), request: Request = Depends()):
     if not validate_phone(booking.guest_phone):
         raise HTTPException(status_code=400, detail="Invalid phone number format")
     
-    ip_key = "booking_ip_default"
+    client_ip = get_client_ip(request)
+    ip_key = f"booking_ip_{client_ip}"
     
     if not limiter.check_rate_limit(ip_key, max_requests=5, time_window=3600):
         raise HTTPException(status_code=429, detail="Too many bookings from this IP, please try again later")
