@@ -10,6 +10,7 @@ const api = axios.create({
 export const hotelApi = {
   getHotels: (params) => api.get('/hotels', { params }),
   getHotel: (id) => api.get(`/hotels/${id}`),
+  getHotelWithAvailability: (id, checkIn, checkOut) => api.get(`/hotels/${id}/availability`, { params: { check_in: checkIn, check_out: checkOut } }),
   createHotel: (data) => api.post('/admin/hotels', data),
   updateHotel: (id, data) => api.put(`/admin/hotels/${id}`, data),
   deleteHotel: (id) => api.delete(`/admin/hotels/${id}`),

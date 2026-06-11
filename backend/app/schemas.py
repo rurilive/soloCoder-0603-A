@@ -138,6 +138,7 @@ class OrderBase(BaseModel):
     nights: int
     total_price: float
     status: str
+    locked_until: Optional[datetime] = None
     special_requests: Optional[str] = None
 
 class Order(OrderBase):
@@ -146,6 +147,24 @@ class Order(OrderBase):
     updated_at: datetime
     hotel: Hotel
     room: Room
+
+    class Config:
+        orm_mode = True
+
+class RoomWithAvailability(Room):
+    available_count: int
+
+    class Config:
+        orm_mode = True
+
+class HotelWithRoomAvailability(HotelBase):
+    id: int
+    min_price: float
+    created_at: datetime
+    updated_at: datetime
+    rooms: List[RoomWithAvailability] = []
+    average_rating: Optional[float] = None
+    review_count: int
 
     class Config:
         orm_mode = True

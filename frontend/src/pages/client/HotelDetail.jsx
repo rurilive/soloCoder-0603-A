@@ -21,16 +21,43 @@ function HotelDetail() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  
+  const [roomAvailabilities, setRoomAvailabilities] = useState({});
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
 
   useEffect(() => {
     hotelApi.getHotel(id).then((res) => {
       setHotel(res.data);
+      const availabilities = {};
+      res.data.rooms?.forEach(room => {
+        availabilities[room.id] = room.room_count;
+      });
+      setRoomAvailabilities(availabilities);
     });
     
     reviewApi.getReviews({ hotel_id: id }).then((res) => {
       setReviews(res.data);
     });
   }, [id]);
+  
+  const fetchRoomAvailability = (checkIn, checkOut) => {
+    if (!checkIn || !checkOut) return;
+    
+    setIsLoadingAvailability(true);
+    hotelApi.getHotelWithAvailability(id, checkIn.format('YYYY-MM-DD'), checkOut.format('YYYY-MM-DD'))
+      .then((res) => {
+        const availabilities = {};
+        res.data.rooms?.forEach(room => {
+          availabilities[room.id] = room.available_count;
+        });
+        setRoomAvailabilities(availabilities);
+        setIsLoadingAvailability(false);
+      })
+      .catch(() => {
+        message.error('获取房间可订数量失败');
+        setIsLoadingAvailability(false);
+      });
+  };
 
   const loadCaptcha = () => {
     captchaApi.getCaptcha().then((res) => {
@@ -55,6 +82,9 @@ function HotelDetail() {
 
   const handleDateChange = (changedValues, allValues) => {
     if (changedValues.check_in || changedValues.check_out) {
+      if (allValues.check_in && allValues.check_out) {
+        fetchRoomAvailability(allValues.check_in, allValues.check_out);
+      }
       if (selectedRoom && allValues.check_in && allValues.check_out) {
         calculatePrice(allValues.check_in, allValues.check_out);
       }
@@ -215,7 +245,7 @@ function HotelDetail() {
                     <div className="flex items-center gap-4 text-sm text-gray-500 mb-3">
                       <span>床型: {room.bed_type === 'single' ? '单人床' : room.bed_type === 'double' ? '双人床' : '双床'}</span>
                       <span>入住人数: {room.max_guests}人</span>
-                      <span>剩余: {room.room_count}间</span>
+                      <span>剩余: {isLoadingAvailability ? '加载中...' : (roomAvailabilities[room.id] || room.room_count)}间</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-red-500 text-xl font-bold">¥{room.price_per_night}/晚</span>

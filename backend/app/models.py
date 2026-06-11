@@ -81,6 +81,7 @@ class Order(Base):
     nights = Column(Integer)
     total_price = Column(Float)
     status = Column(String)
+    locked_until = Column(DateTime)
     special_requests = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from ..database import get_db
 from ..models import Hotel, Room, Order, Review
-from ..schemas import Hotel as HotelSchema, HotelCreate, HotelUpdate, Room as RoomSchema, HotelWithRating
+from ..schemas import Hotel as HotelSchema, HotelCreate, HotelUpdate, Room as RoomSchema, HotelWithRating, HotelWithRoomAvailability, RoomWithAvailability
 
 router = APIRouter()
 
@@ -59,6 +59,49 @@ def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
         'average_rating': round(rating_data.average_rating, 1) if rating_data.average_rating else None,
         'review_count': rating_data.review_count if rating_data.review_count else 0,
         'rooms': hotel.rooms
+    }
+    
+    return result
+
+@router.get("/hotels/{hotel_id}/availability", response_model=HotelWithRoomAvailability)
+def get_hotel_with_availability(
+    hotel_id: int,
+    check_in: date = Query(...),
+    check_out: date = Query(...),
+    db: Session = Depends(get_db)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    
+    rating_data = db.query(
+        func.avg(Review.rating).label('average_rating'),
+        func.count(Review.id).label('review_count')
+    ).filter(
+        Review.hotel_id == hotel_id,
+        Review.status == "approved"
+    ).first()
+    
+    rooms_with_availability = []
+    for room in hotel.rooms:
+        occupied_count = db.query(Order).filter(
+            Order.room_id == room.id,
+            Order.status.in_(["confirmed", "pending"]),
+            Order.locked_until.isnot(None) | (Order.status == "confirmed"),
+            (Order.check_in < check_out) & (Order.check_out > check_in)
+        ).filter(
+            (Order.locked_until > datetime.now()) | (Order.status == "confirmed")
+        ).count()
+        
+        available_count = max(0, room.room_count - occupied_count)
+        rooms_with_availability.append({
+            **room.__dict__,
+            'available_count': available_count
+        })
+    
+    result = {
+        **hotel.__dict__,
+        'average_rating': round(rating_data.average_rating, 1) if rating_data.average_rating else None,
+        'review_count': rating_data.review_count if rating_data.review_count else 0,
+        'rooms': rooms_with_availability
     }
     
     return result

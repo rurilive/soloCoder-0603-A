@@ -49,6 +49,13 @@ def update_order_status(order_id: int, update: OrderStatusUpdate, db: Session = 
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
     
     order.status = update.status
+    
+    if update.status == "cancelled":
+        order.locked_until = None
+    
+    if update.status == "confirmed":
+        order.locked_until = None
+    
     db.commit()
     db.refresh(order)
     return order

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import date
+from datetime import date, datetime, timedelta
 import re
 
 from ..database import get_db
@@ -10,6 +10,8 @@ from ..utils import generate_order_no, calculate_nights, calculate_final_price
 from ..limiter import limiter
 
 router = APIRouter()
+
+LOCK_DURATION_MINUTES = 30
 
 def validate_phone(phone: str) -> bool:
     pattern = r'^1[3-9]\d{9}$'
@@ -60,18 +62,22 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
     if nights <= 0:
         raise HTTPException(status_code=400, detail="Invalid date range")
     
-    active_orders = db.query(Order).filter(
+    occupied_count = db.query(Order).filter(
         Order.room_id == booking.room_id,
-        Order.status != "cancelled",
-        (Order.check_in <= booking.check_out) & (Order.check_out >= booking.check_in)
+        Order.status.in_(["confirmed", "pending"]),
+        (Order.check_in < booking.check_out) & (Order.check_out > booking.check_in)
+    ).filter(
+        (Order.locked_until > datetime.now()) | (Order.status == "confirmed")
     ).count()
     
-    if active_orders >= room.room_count:
+    if occupied_count >= room.room_count:
         raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
     
     price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
     total_price = price_result['final_total']
     order_no = generate_order_no()
+    
+    locked_until = datetime.now() + timedelta(minutes=LOCK_DURATION_MINUTES)
     
     new_order = Order(
         order_no=order_no,
@@ -84,7 +90,8 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         check_out=booking.check_out,
         nights=nights,
         total_price=total_price,
-        status="confirmed",
+        status="pending",
+        locked_until=locked_until,
         special_requests=booking.special_requests
     )
     
@@ -93,3 +100,40 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
     db.refresh(new_order)
     
     return new_order
+
+@router.post("/bookings/{order_id}/confirm")
+def confirm_booking(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.status != "pending":
+        raise HTTPException(status_code=400, detail="Only pending orders can be confirmed")
+    
+    if order.locked_until and order.locked_until < datetime.now():
+        raise HTTPException(status_code=400, detail="Order has expired, please create a new booking")
+    
+    order.status = "confirmed"
+    order.locked_until = None
+    db.commit()
+    db.refresh(order)
+    
+    return {"status": "success", "message": "Booking confirmed successfully"}
+
+@router.post("/bookings/{order_id}/release")
+def release_booking(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.status == "confirmed":
+        raise HTTPException(status_code=400, detail="Cannot release a confirmed order")
+    
+    order.status = "cancelled"
+    order.locked_until = None
+    db.commit()
+    db.refresh(order)
+    
+    return {"status": "success", "message": "Booking released successfully"}
