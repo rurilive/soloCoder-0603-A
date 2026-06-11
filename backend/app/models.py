@@ -104,6 +104,17 @@ class RoomInventoryLock(Base):
     room = relationship("Room")
     order = relationship("Order")
 
+class RoomLock(Base):
+    __tablename__ = "room_locks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), unique=True, nullable=False)
+    locked_at = Column(DateTime, nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+    lock_owner = Column(String, nullable=True)
+    
+    room = relationship("Room")
+
 class Review(Base):
     __tablename__ = "reviews"
     

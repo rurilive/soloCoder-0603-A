@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from datetime import date, datetime, timedelta
 import re
+import uuid
 
 from ..database import get_db
-from ..models import Room, Hotel, Order, RoomInventoryLock
+from ..models import Room, Hotel, Order, RoomInventoryLock, RoomLock
 from ..schemas import BookingCreate, Order as OrderSchema
 from ..utils import generate_order_no, calculate_nights, calculate_final_price
 from ..limiter import limiter
@@ -56,7 +57,12 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         raise HTTPException(status_code=400, detail="Invalid date range")
     
     try:
-        room = db.query(Room).filter(Room.id == booking.room_id).with_for_update().first()
+        # 使用 BEGIN IMMEDIATE 事务模式，确保在事务开始时就获取写锁
+        # 这样可以防止其他并发事务同时修改库存
+        connection = db.connection()
+        connection.execute(text("BEGIN IMMEDIATE"))
+        
+        room = db.query(Room).filter(Room.id == booking.room_id).first()
         if not room:
             raise HTTPException(status_code=404, detail="Room not found")
         
@@ -66,20 +72,7 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         
         now = datetime.now()
         
-        locked_until = now + timedelta(minutes=LOCK_DURATION_MINUTES)
-        
-        active_lock_count = db.query(RoomInventoryLock).filter(
-            and_(
-                RoomInventoryLock.room_id == booking.room_id,
-                RoomInventoryLock.check_in < booking.check_out,
-                RoomInventoryLock.check_out > booking.check_in,
-                RoomInventoryLock.locked_until > now
-            )
-        ).count()
-        
-        if active_lock_count > 0:
-            raise HTTPException(status_code=400, detail="Room is temporarily locked, please try again later")
-        
+        # 检查库存
         occupied_count = db.query(Order).filter(
             and_(
                 Order.room_id == booking.room_id,
@@ -93,20 +86,10 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
             )
         ).count()
         
-        total_occupied = occupied_count + active_lock_count
-        
-        if total_occupied >= room.room_count:
+        if occupied_count >= room.room_count:
             raise HTTPException(status_code=400, detail="No available rooms for the selected dates")
         
-        inventory_lock = RoomInventoryLock(
-            room_id=booking.room_id,
-            check_in=booking.check_in,
-            check_out=booking.check_out,
-            locked_at=now,
-            locked_until=locked_until
-        )
-        db.add(inventory_lock)
-        db.flush()
+        locked_until = now + timedelta(minutes=LOCK_DURATION_MINUTES)
         
         price_result = calculate_final_price(db, booking.room_id, booking.check_in, booking.check_out)
         total_price = price_result['final_total']
@@ -131,7 +114,15 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db), reques
         db.add(new_order)
         db.flush()
         
-        inventory_lock.order_id = new_order.id
+        inventory_lock = RoomInventoryLock(
+            room_id=booking.room_id,
+            check_in=booking.check_in,
+            check_out=booking.check_out,
+            locked_at=now,
+            locked_until=locked_until,
+            order_id=new_order.id
+        )
+        db.add(inventory_lock)
         
         db.commit()
         db.refresh(new_order)
