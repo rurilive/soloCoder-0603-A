@@ -203,28 +203,33 @@ const EventDetail = () => {
             )}
             <form onSubmit={handleSubmit}>
               {event.registration_form?.map(renderFormField)}
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">姓名</label>
-                <input
-                  type="text"
-                  value={formData.name || ''}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                  placeholder="请输入您的姓名"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-gray-700 mb-2">手机号</label>
-                <input
-                  type="tel"
-                  value={formData.phone || ''}
-                  onChange={(e) => handleInputChange('phone', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                  placeholder="请输入您的手机号"
-                />
-              </div>
+              {/* 如果没有自定义表单，显示默认的姓名和手机号字段 */}
+              {(!event.registration_form || event.registration_form.length === 0) && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-gray-700 mb-2">姓名</label>
+                    <input
+                      type="text"
+                      value={formData.name || ''}
+                      onChange={(e) => handleInputChange('name', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                      placeholder="请输入您的姓名"
+                    />
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-gray-700 mb-2">手机号</label>
+                    <input
+                      type="tel"
+                      value={formData.phone || ''}
+                      onChange={(e) => handleInputChange('phone', e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required
+                      placeholder="请输入您的手机号"
+                    />
+                  </div>
+                </>
+              )}
               <button
                 type="submit"
                 disabled={submitting}

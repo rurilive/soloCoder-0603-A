@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
-from .schemas import RegistrationCreate, RegistrationResponse
-from .models import Registration, Event, User
-from .database import get_db
-from .dependencies import get_current_user, get_current_organizer
-from .utils import generate_ticket_code, generate_qr_code
+from ..schemas import RegistrationCreate, RegistrationResponse
+from ..models import Registration, Event, User
+from ..database import get_db
+from ..dependencies import get_current_user, get_current_organizer
+from ..utils import generate_ticket_code, generate_qr_code
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
