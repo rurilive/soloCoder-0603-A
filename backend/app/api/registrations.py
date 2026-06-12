@@ -322,10 +322,12 @@ def confirm_waitlist_offer(
                 "registration": RegistrationResponse.from_orm(registration)
             }
         else:
-            # 用户拒绝递补，直接删除报名记录
-            registration_id = registration.id
-            registration_user_id = registration.user_id
-            db.delete(registration)
+            # 用户拒绝递补，更新状态为cancelled，保留历史记录
+            registration.status = "cancelled"
+            registration.waitlist_confirmed_at = datetime.utcnow()
+            registration.waitlist_offer_token = None
+            registration.waitlist_offer_sent_at = None
+            registration.waitlist_position = None
             db.commit()
             
             # 查找下一位候补并通知
@@ -355,7 +357,7 @@ def confirm_waitlist_offer(
             return {
                 "success": True,
                 "message": "You have declined the waitlist offer. Your registration has been cancelled.",
-                "registration_id": registration_id
+                "registration": RegistrationResponse.from_orm(registration)
             }
     
     except Exception as e:
@@ -368,9 +370,12 @@ def handle_waitlist_timeout(registration: Registration, db: Session):
         return {"success": False, "message": "Event not found"}
     
     try:
-        # 超时用户直接取消报名，不再放回候补队尾
-        registration_id = registration.id
-        db.delete(registration)
+        # 超时用户更新状态为cancelled，保留历史记录
+        registration.status = "cancelled"
+        registration.waitlist_confirmed_at = datetime.utcnow()
+        registration.waitlist_offer_token = None
+        registration.waitlist_offer_sent_at = None
+        registration.waitlist_position = None
         db.commit()
         
         # 查找下一位候补并通知
@@ -400,7 +405,7 @@ def handle_waitlist_timeout(registration: Registration, db: Session):
         return {
             "success": True,
             "message": "The confirmation period has expired. Your registration has been cancelled.",
-            "registration_id": registration_id
+            "registration": RegistrationResponse.from_orm(registration)
         }
     
     except Exception as e:

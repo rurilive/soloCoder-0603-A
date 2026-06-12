@@ -112,11 +112,12 @@ def test_refuse_waitlist_offer():
     assert result["success"] == True, "拒绝应该成功"
     print(f"   ✓ 用户3拒绝了递补名额")
     
-    print("\n9. 验证用户3的报名记录已删除...")
+    print("\n9. 验证用户3的报名记录保留但状态为cancelled...")
     user3_regs_after = get_registrations(user3_token)
     user3_reg_after = next((r for r in user3_regs_after if r["event_id"] == event_id), None)
-    assert user3_reg_after is None, f"用户3的报名记录应该已删除，但仍然存在: {user3_reg_after}"
-    print(f"   ✓ 用户3的报名记录已删除")
+    assert user3_reg_after is not None, f"用户3的报名记录应该保留"
+    assert user3_reg_after["status"] == "cancelled", f"用户3的状态应该是cancelled，但实际是: {user3_reg_after['status']}"
+    print(f"   ✓ 用户3的报名记录保留，状态为cancelled")
     
     print("\n=== 拒绝测试完成！ ===")
 
@@ -176,11 +177,12 @@ def test_timeout_handling():
     assert result["success"] == True, "超时处理应该成功"
     print(f"   ✓ 超时用户已被处理")
     
-    print("\n10. 验证用户3的报名记录已删除...")
+    print("\n10. 验证用户3的报名记录保留但状态为cancelled...")
     user3_regs_after = get_registrations(user3_token)
     user3_reg_after = next((r for r in user3_regs_after if r["event_id"] == event_id), None)
-    assert user3_reg_after is None, f"超时用户3的报名记录应该已删除"
-    print(f"   ✓ 超时用户的报名记录已删除")
+    assert user3_reg_after is not None, f"超时用户3的报名记录应该保留"
+    assert user3_reg_after["status"] == "cancelled", f"超时用户3的状态应该是cancelled，但实际是: {user3_reg_after['status']}"
+    print(f"   ✓ 超时用户的报名记录保留，状态为cancelled")
     
     print("\n=== 超时测试完成！ ===")
 
