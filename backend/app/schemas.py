@@ -60,6 +60,20 @@ class RegistrationResponse(BaseModel):
     created_at: datetime
     status: str
     waitlist_position: Optional[int]
+    waitlist_offer_sent_at: Optional[datetime]
+    waitlist_confirmed_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+class WaitlistConfirmRequest(BaseModel):
+    token: str
+    accept: bool
+
+class WaitlistConfirmResponse(BaseModel):
+    success: bool
+    message: str
+    registration: Optional[RegistrationResponse]
     
     class Config:
         from_attributes = True

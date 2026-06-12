@@ -40,6 +40,10 @@ def generate_ticket_code() -> str:
     import uuid
     return str(uuid.uuid4()).replace("-", "").upper()[:12]
 
+def generate_waitlist_offer_token() -> str:
+    import uuid
+    return str(uuid.uuid4()).replace("-", "").lower()
+
 def generate_qr_code(data: str) -> str:
     qr = qrcode.QRCode(
         version=1,
@@ -65,7 +69,7 @@ def get_smtp_config():
         "use_ssl": os.getenv("SMTP_USE_SSL", "false").lower() == "true"
     }
 
-def send_waitlist_notification_email(to_email: str, event_title: str) -> dict:
+def send_waitlist_notification_email(to_email: str, event_title: str, offer_token: str, frontend_url: str = "http://localhost:5173") -> dict:
     smtp_config = get_smtp_config()
     
     if not smtp_config["username"] or not smtp_config["password"]:
@@ -77,18 +81,22 @@ def send_waitlist_notification_email(to_email: str, event_title: str) -> dict:
         }
     
     try:
+        confirm_url = f"{frontend_url}/waitlist/confirm/{offer_token}"
+        
         msg = MIMEMultipart()
         msg['From'] = smtp_config["sender_email"]
         msg['To'] = to_email
-        msg['Subject'] = f"恭喜！您已成功获得 {event_title} 的报名资格"
+        msg['Subject'] = f"恭喜！您已获得 {event_title} 的递补报名资格"
         
         body = f"""
         <html>
         <body>
         <h2>恭喜您！</h2>
-        <p>您已从候补名单中成功递补，获得了 <strong>{event_title}</strong> 的报名资格。</p>
-        <p>请登录系统查看您的报名详情。</p>
-        <p>如有任何问题，请联系活动主办方。</p>
+        <p>您已从候补名单中递补，获得了 <strong>{event_title}</strong> 的报名资格。</p>
+        <p>请在 <strong>24小时内</strong> 点击下方链接确认是否接受名额：</p>
+        <p><a href="{confirm_url}" style="display: inline-block; padding: 12px 24px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">确认接受名额</a></p>
+        <p>如果您在24小时内未确认，系统将自动判定您放弃递补机会，名额将顺延给下一位候补人员。</p>
+        <p>确认链接：{confirm_url}</p>
         <br>
         <p>此致</p>
         <p>活动报名系统</p>

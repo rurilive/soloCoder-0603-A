@@ -48,6 +48,9 @@ class Registration(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     status = Column(String, default="confirmed")
     waitlist_position = Column(Integer, default=None)
+    waitlist_offer_sent_at = Column(DateTime)
+    waitlist_offer_token = Column(String, unique=True, index=True)
+    waitlist_confirmed_at = Column(DateTime)
     
     user = relationship("User", back_populates="registrations")
     event = relationship("Event", back_populates="registrations")
