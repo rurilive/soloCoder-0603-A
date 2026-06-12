@@ -1,5 +1,7 @@
 import qrcode
 import smtplib
+import os
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from io import BytesIO
@@ -8,6 +10,9 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from typing import Optional
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 SECRET_KEY = "your-secret-key-keep-it-safe-change-in-production"
 ALGORITHM = "HS256"
@@ -49,18 +54,31 @@ def generate_qr_code(data: str) -> str:
     img.save(buffer, format="PNG")
     return b64encode(buffer.getvalue()).decode("utf-8")
 
-SMTP_CONFIG = {
-    "server": "smtp.example.com",
-    "port": 587,
-    "username": "noreply@example.com",
-    "password": "your-email-password",
-    "sender_email": "noreply@example.com"
-}
+def get_smtp_config():
+    return {
+        "server": os.getenv("SMTP_SERVER", "smtp.example.com"),
+        "port": int(os.getenv("SMTP_PORT", 587)),
+        "username": os.getenv("SMTP_USERNAME", ""),
+        "password": os.getenv("SMTP_PASSWORD", ""),
+        "sender_email": os.getenv("SMTP_SENDER_EMAIL", "noreply@example.com"),
+        "use_tls": os.getenv("SMTP_USE_TLS", "true").lower() == "true",
+        "use_ssl": os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    }
 
-def send_waitlist_notification_email(to_email: str, event_title: str) -> bool:
+def send_waitlist_notification_email(to_email: str, event_title: str) -> dict:
+    smtp_config = get_smtp_config()
+    
+    if not smtp_config["username"] or not smtp_config["password"]:
+        logger.warning("SMTP credentials not configured, skipping email notification")
+        return {
+            "success": False,
+            "error": "SMTP credentials not configured",
+            "message": "Email notification skipped due to missing SMTP configuration"
+        }
+    
     try:
         msg = MIMEMultipart()
-        msg['From'] = SMTP_CONFIG["sender_email"]
+        msg['From'] = smtp_config["sender_email"]
         msg['To'] = to_email
         msg['Subject'] = f"恭喜！您已成功获得 {event_title} 的报名资格"
         
@@ -80,13 +98,55 @@ def send_waitlist_notification_email(to_email: str, event_title: str) -> bool:
         
         msg.attach(MIMEText(body, 'html'))
         
-        with smtplib.SMTP(SMTP_CONFIG["server"], SMTP_CONFIG["port"]) as server:
-            server.starttls()
-            server.login(SMTP_CONFIG["username"], SMTP_CONFIG["password"])
-            text = msg.as_string()
-            server.sendmail(SMTP_CONFIG["sender_email"], to_email, text)
+        if smtp_config["use_ssl"]:
+            with smtplib.SMTP_SSL(smtp_config["server"], smtp_config["port"]) as server:
+                server.login(smtp_config["username"], smtp_config["password"])
+                text = msg.as_string()
+                server.sendmail(smtp_config["sender_email"], to_email, text)
+        else:
+            with smtplib.SMTP(smtp_config["server"], smtp_config["port"]) as server:
+                if smtp_config["use_tls"]:
+                    server.starttls()
+                server.login(smtp_config["username"], smtp_config["password"])
+                text = msg.as_string()
+                server.sendmail(smtp_config["sender_email"], to_email, text)
         
-        return True
+        logger.info(f"Successfully sent waitlist notification email to {to_email}")
+        return {
+            "success": True,
+            "error": None,
+            "message": "Email sent successfully"
+        }
+        
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP authentication failed: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "message": "邮件发送失败：SMTP认证失败，请检查用户名和密码"
+        }
+    except smtplib.SMTPConnectError as e:
+        error_msg = f"SMTP connection failed: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "message": "邮件发送失败：无法连接到SMTP服务器"
+        }
+    except smtplib.SMTPException as e:
+        error_msg = f"SMTP error occurred: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "message": f"邮件发送失败：{str(e)}"
+        }
     except Exception as e:
-        print(f"Failed to send email: {str(e)}")
-        return False
+        error_msg = f"Unexpected error sending email: {str(e)}"
+        logger.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "message": "邮件发送失败：未知错误"
+        }

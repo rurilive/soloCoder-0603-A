@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -7,6 +8,8 @@ from ..models import Registration, Event, User
 from ..database import get_db
 from ..dependencies import get_current_user, get_current_organizer
 from ..utils import generate_ticket_code, generate_qr_code, send_waitlist_notification_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -174,31 +177,38 @@ def cancel_registration(
     db.commit()
     
     if was_confirmed:
-        waitlisted_users = db.query(Registration).filter(
-            Registration.event_id == event.id,
-            Registration.status == "waitlisted"
-        ).order_by(Registration.waitlist_position).all()
-        
-        if waitlisted_users:
-            next_waitlisted = waitlisted_users[0]
-            original_position = next_waitlisted.waitlist_position
-            
-            db.query(Registration).filter(
-                Registration.event_id == event.id,
-                Registration.status == "waitlisted",
-                Registration.waitlist_position > original_position
-            ).update({"waitlist_position": Registration.waitlist_position - 1})
-            
-            next_waitlisted.status = "confirmed"
-            next_waitlisted.ticket_code = generate_ticket_code()
-            next_waitlisted.waitlist_position = None
-            
+        try:
+            with db.begin_nested():
+                waitlisted_users = db.query(Registration).filter(
+                    Registration.event_id == event.id,
+                    Registration.status == "waitlisted"
+                ).order_by(Registration.waitlist_position).with_for_update().all()
+                
+                if waitlisted_users:
+                    next_waitlisted = waitlisted_users[0]
+                    original_position = next_waitlisted.waitlist_position
+                    
+                    db.query(Registration).filter(
+                        Registration.event_id == event.id,
+                        Registration.status == "waitlisted",
+                        Registration.waitlist_position > original_position
+                    ).update({"waitlist_position": Registration.waitlist_position - 1})
+                    
+                    next_waitlisted.status = "confirmed"
+                    next_waitlisted.ticket_code = generate_ticket_code()
+                    next_waitlisted.waitlist_position = None
+                    
             db.commit()
-            db.refresh(next_waitlisted)
             
             waitlisted_user = db.query(User).filter(User.id == next_waitlisted.user_id).first()
             if waitlisted_user:
-                send_waitlist_notification_email(waitlisted_user.email, event.title)
+                email_result = send_waitlist_notification_email(waitlisted_user.email, event.title)
+                if not email_result.get("success"):
+                    logger.warning(f"Failed to send waitlist notification email: {email_result.get('message')}")
+                
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to process waitlist: {str(e)}")
     
     return {"message": "Registration cancelled successfully"}
 
