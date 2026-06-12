@@ -20,6 +20,20 @@ def get_events(db: Session = Depends(get_db)):
         result.append(event_data)
     return result
 
+@router.get("/my-events", response_model=list[EventResponse])
+def get_my_events(
+    db: Session = Depends(get_db),
+    organizer: User = Depends(get_current_organizer)
+):
+    events = db.query(Event).filter(Event.organizer_id == organizer.id).all()
+    result = []
+    for event in events:
+        registered_count = db.query(Registration).filter(Registration.event_id == event.id).count()
+        event_data = event.__dict__.copy()
+        event_data["registered_count"] = registered_count
+        result.append(event_data)
+    return result
+
 @router.get("/{event_id}", response_model=EventResponse)
 def get_event(event_id: int, db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id).first()

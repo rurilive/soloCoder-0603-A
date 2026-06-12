@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { registrationAPI, deviceAPI } from '../api';
+import { registrationAPI, deviceAPI, eventAPI } from '../api';
 
 const CheckIn = () => {
   const [ticketCode, setTicketCode] = useState('');
@@ -16,6 +16,24 @@ const CheckIn = () => {
   const [showCreateDevice, setShowCreateDevice] = useState(false);
   const [newDevice, setNewDevice] = useState({ device_id: '', name: '', entrance: '' });
   const [editingDevice, setEditingDevice] = useState(null);
+  const [myEvents, setMyEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  const loadMyEvents = async () => {
+    setLoadingEvents(true);
+    try {
+      const response = await eventAPI.getMyEvents();
+      setMyEvents(response.data);
+    } catch (err) {
+      console.error('Failed to load events:', err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMyEvents();
+  }, []);
 
   const loadStatistics = async () => {
     if (!eventId) return;
@@ -61,6 +79,8 @@ const CheckIn = () => {
     } else {
       setDevices([]);
       setSelectedDevice('');
+      setStatistics(null);
+      setCheckInRecords([]);
     }
   }, [eventId]);
 
@@ -155,7 +175,7 @@ const CheckIn = () => {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingDevice || !newDevice.device_id || !newDevice.name || !newDevice.entrance) {
+    if (!editingDevice || !newDevice.name || !newDevice.entrance) {
       setMessage('请填写完整设备信息');
       setStatus('error');
       return;
@@ -163,7 +183,7 @@ const CheckIn = () => {
 
     try {
       await deviceAPI.update(editingDevice.id, {
-        device_id: newDevice.device_id,
+        device_id: editingDevice.device_id,
         name: newDevice.name,
         entrance: newDevice.entrance,
         event_id: parseInt(eventId)
@@ -209,6 +229,15 @@ const CheckIn = () => {
     });
   };
 
+  const formatEventTime = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit'
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4">
       <div className="max-w-6xl mx-auto">
@@ -220,14 +249,28 @@ const CheckIn = () => {
               <h3 className="text-xl font-semibold text-gray-700 mb-4">签到操作</h3>
               
               <div className="mb-4">
-                <label className="block text-gray-700 mb-2">活动ID</label>
-                <input
-                  type="text"
-                  value={eventId}
-                  onChange={(e) => setEventId(e.target.value)}
-                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="输入活动ID"
-                />
+                <label className="block text-gray-700 mb-2">选择活动</label>
+                {loadingEvents ? (
+                  <div className="flex justify-center items-center py-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                  </div>
+                ) : (
+                  <select
+                    value={eventId}
+                    onChange={(e) => setEventId(e.target.value)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">请选择活动</option>
+                    {myEvents.map((event) => (
+                      <option key={event.id} value={event.id}>
+                        {event.title} ({formatEventTime(event.start_time)})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {myEvents.length === 0 && !loadingEvents && (
+                  <p className="text-sm text-gray-500 mt-2">暂无活动，请先创建活动</p>
+                )}
               </div>
 
               <div className="mb-4">
@@ -236,6 +279,7 @@ const CheckIn = () => {
                   value={selectedDevice}
                   onChange={(e) => setSelectedDevice(e.target.value)}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={!eventId}
                 >
                   <option value="">请选择设备</option>
                   {devices.map((device) => (
@@ -265,11 +309,12 @@ const CheckIn = () => {
                     onChange={(e) => setTicketCode(e.target.value)}
                     className="w-full px-4 py-3 text-lg text-center font-mono border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="请输入票码"
+                    disabled={!eventId || !selectedDevice}
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || !eventId || !selectedDevice}
                   className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition disabled:bg-gray-400 text-lg font-semibold"
                 >
                   {submitting ? '签到中...' : '确认签到'}
@@ -288,6 +333,11 @@ const CheckIn = () => {
                 <h3 className="text-xl font-semibold text-gray-700">设备管理</h3>
                 <button
                   onClick={() => {
+                    if (!eventId) {
+                      setMessage('请先选择活动');
+                      setStatus('error');
+                      return;
+                    }
                     setEditingDevice(null);
                     setNewDevice({ device_id: '', name: '', entrance: '' });
                     setShowCreateDevice(true);
@@ -298,7 +348,9 @@ const CheckIn = () => {
                 </button>
               </div>
 
-              {loadingDevices ? (
+              {!eventId ? (
+                <p className="text-center text-gray-400 py-4">请先选择活动</p>
+              ) : loadingDevices ? (
                 <div className="flex justify-center items-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                 </div>
@@ -342,7 +394,11 @@ const CheckIn = () => {
           </div>
 
           <div className="lg:col-span-3 space-y-6">
-            {loadingStats ? (
+            {!eventId ? (
+              <div className="bg-white rounded-xl shadow-lg p-6 text-center text-gray-400">
+                请选择活动查看统计数据
+              </div>
+            ) : loadingStats ? (
               <div className="bg-white rounded-xl shadow-lg p-6 flex justify-center items-center">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
               </div>
@@ -370,7 +426,7 @@ const CheckIn = () => {
               </div>
             ) : (
               <div className="bg-white rounded-xl shadow-lg p-6 text-center text-gray-400">
-                请输入活动ID查看统计数据
+                请选择活动查看统计数据
               </div>
             )}
 
@@ -422,9 +478,15 @@ const CheckIn = () => {
                     type="text"
                     value={newDevice.device_id}
                     onChange={(e) => setNewDevice({ ...newDevice, device_id: e.target.value })}
-                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className={`w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      editingDevice ? 'bg-gray-100 cursor-not-allowed' : ''
+                    }`}
                     placeholder="输入设备ID"
+                    disabled={editingDevice}
                   />
+                  {editingDevice && (
+                    <p className="text-sm text-gray-500 mt-1">设备ID创建后不可修改</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-gray-700 mb-2">设备名称</label>

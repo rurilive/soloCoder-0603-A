@@ -27,6 +27,7 @@ export const authAPI = {
 export const eventAPI = {
   getAll: () => api.get('/events'),
   getById: (id) => api.get(`/events/${id}`),
+  getMyEvents: () => api.get('/events/my-events'),
   create: (eventData) => api.post('/events', eventData),
   update: (id, eventData) => api.put(`/events/${id}`, eventData),
   delete: (id) => api.delete(`/events/${id}`),
