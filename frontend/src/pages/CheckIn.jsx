@@ -3,7 +3,7 @@ import { registrationAPI, deviceAPI } from '../api';
 
 const CheckIn = () => {
   const [ticketCode, setTicketCode] = useState('');
-  const [deviceId, setDeviceId] = useState('');
+  const [selectedDevice, setSelectedDevice] = useState('');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -11,6 +11,11 @@ const CheckIn = () => {
   const [checkInRecords, setCheckInRecords] = useState([]);
   const [eventId, setEventId] = useState('');
   const [loadingStats, setLoadingStats] = useState(false);
+  const [devices, setDevices] = useState([]);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+  const [showCreateDevice, setShowCreateDevice] = useState(false);
+  const [newDevice, setNewDevice] = useState({ device_id: '', name: '', entrance: '' });
+  const [editingDevice, setEditingDevice] = useState(null);
 
   const loadStatistics = async () => {
     if (!eventId) return;
@@ -35,10 +40,27 @@ const CheckIn = () => {
     }
   };
 
+  const loadDevices = async () => {
+    if (!eventId) return;
+    setLoadingDevices(true);
+    try {
+      const response = await deviceAPI.getByEvent(eventId);
+      setDevices(response.data);
+    } catch (err) {
+      console.error('Failed to load devices:', err);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
   useEffect(() => {
     if (eventId) {
       loadStatistics();
       loadCheckInRecords();
+      loadDevices();
+    } else {
+      setDevices([]);
+      setSelectedDevice('');
     }
   }, [eventId]);
 
@@ -59,15 +81,15 @@ const CheckIn = () => {
       setStatus('error');
       return;
     }
-    if (!deviceId.trim()) {
-      setMessage('请输入设备ID');
+    if (!selectedDevice) {
+      setMessage('请选择签到设备');
       setStatus('error');
       return;
     }
 
     setSubmitting(true);
     try {
-      const response = await registrationAPI.checkIn(ticketCode.trim().toUpperCase(), deviceId.trim());
+      const response = await registrationAPI.checkIn(ticketCode.trim().toUpperCase(), selectedDevice);
       setMessage(response.data.message);
       setStatus(response.data.already_checked_in ? 'warning' : 'success');
       
@@ -79,6 +101,99 @@ const CheckIn = () => {
     } finally {
       setSubmitting(false);
       setTicketCode('');
+    }
+  };
+
+  const handleCreateDevice = async () => {
+    if (!newDevice.device_id || !newDevice.name || !newDevice.entrance) {
+      setMessage('请填写完整设备信息');
+      setStatus('error');
+      return;
+    }
+
+    try {
+      await deviceAPI.create({
+        device_id: newDevice.device_id,
+        name: newDevice.name,
+        entrance: newDevice.entrance,
+        event_id: parseInt(eventId)
+      });
+      setMessage('设备创建成功');
+      setStatus('success');
+      setShowCreateDevice(false);
+      setNewDevice({ device_id: '', name: '', entrance: '' });
+      loadDevices();
+    } catch (err) {
+      setMessage(err.response?.data?.detail || '设备创建失败');
+      setStatus('error');
+    }
+  };
+
+  const handleToggleDevice = async (device) => {
+    try {
+      await deviceAPI.update(device.id, {
+        device_id: device.device_id,
+        name: device.name,
+        entrance: device.entrance,
+        event_id: parseInt(eventId),
+        is_active: !device.is_active
+      });
+      loadDevices();
+    } catch (err) {
+      console.error('Failed to update device:', err);
+    }
+  };
+
+  const handleEditDevice = (device) => {
+    setEditingDevice(device);
+    setNewDevice({
+      device_id: device.device_id,
+      name: device.name,
+      entrance: device.entrance
+    });
+    setShowCreateDevice(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingDevice || !newDevice.device_id || !newDevice.name || !newDevice.entrance) {
+      setMessage('请填写完整设备信息');
+      setStatus('error');
+      return;
+    }
+
+    try {
+      await deviceAPI.update(editingDevice.id, {
+        device_id: newDevice.device_id,
+        name: newDevice.name,
+        entrance: newDevice.entrance,
+        event_id: parseInt(eventId)
+      });
+      setMessage('设备更新成功');
+      setStatus('success');
+      setShowCreateDevice(false);
+      setNewDevice({ device_id: '', name: '', entrance: '' });
+      setEditingDevice(null);
+      loadDevices();
+    } catch (err) {
+      setMessage(err.response?.data?.detail || '设备更新失败');
+      setStatus('error');
+    }
+  };
+
+  const handleDeleteDevice = async (device) => {
+    if (!window.confirm(`确定要删除设备 "${device.name}" 吗？`)) return;
+    
+    try {
+      await deviceAPI.delete(device.id);
+      setMessage('设备删除成功');
+      setStatus('success');
+      loadDevices();
+      if (selectedDevice === device.device_id) {
+        setSelectedDevice('');
+      }
+    } catch (err) {
+      setMessage(err.response?.data?.detail || '设备删除失败');
+      setStatus('error');
     }
   };
 
@@ -96,11 +211,11 @@ const CheckIn = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <h2 className="text-3xl font-bold text-center text-gray-800 mb-8">📱 扫码签到系统</h2>
         
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-1 space-y-6">
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-xl font-semibold text-gray-700 mb-4">签到操作</h3>
               
@@ -116,14 +231,19 @@ const CheckIn = () => {
               </div>
 
               <div className="mb-4">
-                <label className="block text-gray-700 mb-2">设备ID</label>
-                <input
-                  type="text"
-                  value={deviceId}
-                  onChange={(e) => setDeviceId(e.target.value)}
+                <label className="block text-gray-700 mb-2">签到设备</label>
+                <select
+                  value={selectedDevice}
+                  onChange={(e) => setSelectedDevice(e.target.value)}
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="输入设备ID"
-                />
+                >
+                  <option value="">请选择设备</option>
+                  {devices.map((device) => (
+                    <option key={device.device_id} value={device.device_id} disabled={!device.is_active}>
+                      {device.name} ({device.entrance}) {!device.is_active && '(已停用)'}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {message && (
@@ -162,9 +282,66 @@ const CheckIn = () => {
                 </p>
               </div>
             </div>
+
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-700">设备管理</h3>
+                <button
+                  onClick={() => {
+                    setEditingDevice(null);
+                    setNewDevice({ device_id: '', name: '', entrance: '' });
+                    setShowCreateDevice(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                >
+                  + 新增设备
+                </button>
+              </div>
+
+              {loadingDevices ? (
+                <div className="flex justify-center items-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                </div>
+              ) : devices.length === 0 ? (
+                <p className="text-center text-gray-400 py-4">暂无设备，请先添加</p>
+              ) : (
+                <div className="space-y-2">
+                  {devices.map((device) => (
+                    <div key={device.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium text-gray-700">{device.name}</div>
+                        <div className="text-sm text-gray-500">{device.entrance} · {device.device_id}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEditDevice(device)}
+                          className="px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 text-xs"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleToggleDevice(device)}
+                          className={`px-2 py-1 rounded text-xs ${
+                            device.is_active ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'
+                          } text-white`}
+                        >
+                          {device.is_active ? '停用' : '启用'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteDevice(device)}
+                          className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-xs"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-3 space-y-6">
             {loadingStats ? (
               <div className="bg-white rounded-xl shadow-lg p-6 flex justify-center items-center">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
@@ -230,6 +407,68 @@ const CheckIn = () => {
             </div>
           </div>
         </div>
+
+        {showCreateDevice && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md mx-4">
+              <h3 className="text-xl font-semibold text-gray-700 mb-4">
+                {editingDevice ? '编辑设备' : '新增设备'}
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-700 mb-2">设备ID</label>
+                  <input
+                    type="text"
+                    value={newDevice.device_id}
+                    onChange={(e) => setNewDevice({ ...newDevice, device_id: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="输入设备ID"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">设备名称</label>
+                  <input
+                    type="text"
+                    value={newDevice.name}
+                    onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="输入设备名称"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">入口名称</label>
+                  <input
+                    type="text"
+                    value={newDevice.entrance}
+                    onChange={(e) => setNewDevice({ ...newDevice, entrance: e.target.value })}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="输入入口名称（如：东门、西门）"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 mt-6">
+                <button
+                  onClick={() => {
+                    setShowCreateDevice(false);
+                    setNewDevice({ device_id: '', name: '', entrance: '' });
+                    setEditingDevice(null);
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={editingDevice ? handleSaveEdit : handleCreateDevice}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  {editingDevice ? '保存修改' : '创建设备'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

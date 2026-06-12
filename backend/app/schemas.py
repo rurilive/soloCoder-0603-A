@@ -115,6 +115,7 @@ class DeviceCreate(BaseModel):
     name: str
     entrance: str
     event_id: int
+    is_active: Optional[bool] = True
 
 class DeviceResponse(BaseModel):
     id: int

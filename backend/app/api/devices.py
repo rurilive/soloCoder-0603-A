@@ -81,6 +81,8 @@ def update_device(
     
     existing_device.name = device.name
     existing_device.entrance = device.entrance
+    if device.is_active is not None:
+        existing_device.is_active = device.is_active
     
     db.commit()
     db.refresh(existing_device)
