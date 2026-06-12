@@ -108,6 +108,42 @@ class EventWithWaitlistResponse(BaseModel):
 
 class CheckInRequest(BaseModel):
     ticket_code: str
+    device_id: Optional[str] = None
+
+class DeviceCreate(BaseModel):
+    device_id: str
+    name: str
+    entrance: str
+    event_id: int
+
+class DeviceResponse(BaseModel):
+    id: int
+    device_id: str
+    name: str
+    entrance: str
+    event_id: int
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class CheckInRecordResponse(BaseModel):
+    id: int
+    registration_id: int
+    device_id: Optional[int]
+    event_id: int
+    entrance: str
+    check_in_time: datetime
+    
+    class Config:
+        from_attributes = True
+
+class CheckInStatistics(BaseModel):
+    event_id: int
+    event_title: str
+    total_checkins: int
+    entrance_counts: Dict[str, int]
 
 class LoginRequest(BaseModel):
     email: EmailStr

@@ -4,6 +4,7 @@ from .database import engine, Base
 from .api.users import router as users_router
 from .api.events import router as events_router
 from .api.registrations import router as registrations_router
+from .api.devices import router as devices_router
 from .scheduler import start_scheduler
 
 Base.metadata.create_all(bind=engine)
@@ -23,6 +24,7 @@ app.add_middleware(
 app.include_router(users_router)
 app.include_router(events_router)
 app.include_router(registrations_router)
+app.include_router(devices_router)
 
 @app.get("/")
 def root():

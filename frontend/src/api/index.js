@@ -36,8 +36,17 @@ export const registrationAPI = {
   getMine: () => api.get('/registrations'),
   create: (data) => api.post('/registrations', data),
   getQRCode: (id) => api.get(`/registrations/${id}/qr-code`),
-  checkIn: (ticketCode) => api.post('/registrations/checkin', { ticket_code: ticketCode }),
+  checkIn: (ticketCode, deviceId) => api.post('/registrations/checkin', { ticket_code: ticketCode, device_id: deviceId }),
   getByEvent: (eventId) => api.get(`/registrations/event/${eventId}`),
+};
+
+export const deviceAPI = {
+  create: (data) => api.post('/devices', data),
+  getByEvent: (eventId) => api.get(`/devices/event/${eventId}`),
+  update: (id, data) => api.put(`/devices/${id}`, data),
+  delete: (id) => api.delete(`/devices/${id}`),
+  getCheckInStatistics: (eventId) => api.get(`/devices/event/${eventId}/checkin-statistics`),
+  getCheckInRecords: (eventId) => api.get(`/devices/event/${eventId}/checkin-records`),
 };
 
 export default api;

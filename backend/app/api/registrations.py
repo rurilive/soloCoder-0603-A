@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from ..schemas import RegistrationCreate, RegistrationResponse, WaitlistResponse, EventWithWaitlistResponse
-from ..models import Registration, Event, User
+from ..models import Registration, Event, User, Device, CheckInRecord
 from ..database import get_db
 from ..dependencies import get_current_user, get_current_organizer
 from ..utils import generate_ticket_code, generate_qr_code, send_waitlist_notification_email, generate_waitlist_offer_token
@@ -109,31 +109,74 @@ def check_in(
     organizer: User = Depends(get_current_organizer)
 ):
     ticket_code = check_in_request.get("ticket_code")
+    device_id = check_in_request.get("device_id")
+    
     if not ticket_code:
         raise HTTPException(status_code=400, detail="Ticket code is required")
     
-    registration = db.query(Registration).filter(Registration.ticket_code == ticket_code).first()
+    registration = db.query(Registration).filter(
+        Registration.ticket_code == ticket_code
+    ).with_for_update().first()
+    
     if not registration:
         raise HTTPException(status_code=404, detail="Invalid ticket code")
     
-    # 验证主办方权限：只有该活动的主办方才能签到
     event = db.query(Event).filter(Event.id == registration.event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    
     if event.organizer_id != organizer.id:
         raise HTTPException(status_code=403, detail="Not authorized to check in for this event")
     
+    if registration.status != "confirmed":
+        raise HTTPException(status_code=400, detail="Registration is not confirmed")
+    
     if registration.check_in:
-        raise HTTPException(status_code=400, detail="Already checked in")
+        existing_record = db.query(CheckInRecord).filter(
+            CheckInRecord.registration_id == registration.id
+        ).first()
+        return {
+            "message": "Already checked in",
+            "registration": registration,
+            "check_in_time": existing_record.check_in_time if existing_record else registration.check_in_time,
+            "already_checked_in": True
+        }
+    
+    entrance = "Unknown"
+    device = None
+    
+    if device_id:
+        device = db.query(Device).filter(
+            Device.device_id == device_id,
+            Device.event_id == event.id,
+            Device.is_active == True
+        ).first()
+        if device:
+            entrance = device.entrance
+        else:
+            raise HTTPException(status_code=400, detail="Invalid device ID or device not assigned to this event")
     
     registration.check_in = True
     registration.check_in_time = datetime.utcnow()
+    
+    check_in_record = CheckInRecord(
+        registration_id=registration.id,
+        device_id=device.id if device else None,
+        event_id=event.id,
+        entrance=entrance,
+        check_in_time=datetime.utcnow()
+    )
+    
+    db.add(check_in_record)
     db.commit()
     db.refresh(registration)
+    db.refresh(check_in_record)
     
     return {
         "message": "Check-in successful",
-        "registration": registration
+        "registration": registration,
+        "check_in_record": check_in_record,
+        "already_checked_in": False
     }
 
 @router.get("/event/{event_id}", response_model=list[RegistrationResponse])

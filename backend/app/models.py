@@ -54,3 +54,30 @@ class Registration(Base):
     
     user = relationship("User", back_populates="registrations")
     event = relationship("Event", back_populates="registrations")
+
+class Device(Base):
+    __tablename__ = "devices"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    entrance = Column(String, nullable=False)
+    event_id = Column(Integer, ForeignKey("events.id"))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    event = relationship("Event")
+
+class CheckInRecord(Base):
+    __tablename__ = "check_in_records"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    registration_id = Column(Integer, ForeignKey("registrations.id"))
+    device_id = Column(Integer, ForeignKey("devices.id"))
+    event_id = Column(Integer, ForeignKey("events.id"))
+    entrance = Column(String, nullable=False)
+    check_in_time = Column(DateTime, default=datetime.utcnow)
+    
+    registration = relationship("Registration")
+    device = relationship("Device")
+    event = relationship("Event")
