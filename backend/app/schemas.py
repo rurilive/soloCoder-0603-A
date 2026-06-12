@@ -53,11 +53,40 @@ class RegistrationResponse(BaseModel):
     id: int
     user_id: int
     event_id: int
-    ticket_code: str
+    ticket_code: Optional[str]
     check_in: bool
     check_in_time: Optional[datetime]
     form_data: Optional[Dict[str, Any]]
     created_at: datetime
+    status: str
+    waitlist_position: Optional[int]
+    
+    class Config:
+        from_attributes = True
+
+class WaitlistResponse(BaseModel):
+    registration_id: int
+    event_id: int
+    user_id: int
+    waitlist_position: int
+    status: str
+    created_at: datetime
+
+class EventWithWaitlistResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    start_time: datetime
+    end_time: datetime
+    location: str
+    max_capacity: int
+    registration_form: Optional[List[Dict[str, Any]]]
+    status: str
+    organizer_id: int
+    created_at: datetime
+    updated_at: datetime
+    registered_count: int
+    waitlist_count: int
     
     class Config:
         from_attributes = True

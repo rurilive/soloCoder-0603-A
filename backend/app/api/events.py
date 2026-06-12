@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
-from ..schemas import EventCreate, EventResponse
+from ..schemas import EventCreate, EventResponse, EventWithWaitlistResponse
 from ..models import Event, Registration
 from ..database import get_db
 from ..dependencies import get_current_organizer, get_current_user
@@ -28,6 +28,28 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
     registered_count = db.query(Registration).filter(Registration.event_id == event.id).count()
     event_data = event.__dict__.copy()
     event_data["registered_count"] = registered_count
+    return event_data
+
+@router.get("/{event_id}/detail", response_model=EventWithWaitlistResponse)
+def get_event_with_waitlist(event_id: int, db: Session = Depends(get_db)):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    registered_count = db.query(Registration).filter(
+        Registration.event_id == event.id,
+        Registration.status == "confirmed"
+    ).count()
+    
+    waitlist_count = db.query(Registration).filter(
+        Registration.event_id == event.id,
+        Registration.status == "waitlisted"
+    ).count()
+    
+    event_data = event.__dict__.copy()
+    event_data["registered_count"] = registered_count
+    event_data["waitlist_count"] = waitlist_count
+    
     return event_data
 
 @router.post("/", response_model=EventResponse, status_code=status.HTTP_201_CREATED)

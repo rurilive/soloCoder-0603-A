@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime
-from ..schemas import RegistrationCreate, RegistrationResponse
+from ..schemas import RegistrationCreate, RegistrationResponse, WaitlistResponse, EventWithWaitlistResponse
 from ..models import Registration, Event, User
 from ..database import get_db
 from ..dependencies import get_current_user, get_current_organizer
-from ..utils import generate_ticket_code, generate_qr_code
+from ..utils import generate_ticket_code, generate_qr_code, send_waitlist_notification_email
 
 router = APIRouter(prefix="/registrations", tags=["registrations"])
 
@@ -32,18 +33,44 @@ def register_for_event(
         Registration.event_id == registration.event_id
     ).first()
     if existing_registration:
-        raise HTTPException(status_code=400, detail="Already registered for this event")
+        if existing_registration.status == "waitlisted":
+            raise HTTPException(status_code=400, detail="Already on the waitlist for this event")
+        else:
+            raise HTTPException(status_code=400, detail="Already registered for this event")
     
-    registered_count = db.query(Registration).filter(Registration.event_id == registration.event_id).count()
-    if registered_count >= event.max_capacity:
-        raise HTTPException(status_code=400, detail="Event is full")
+    confirmed_count = db.query(Registration).filter(
+        Registration.event_id == registration.event_id,
+        Registration.status == "confirmed"
+    ).count()
+    
+    if confirmed_count >= event.max_capacity:
+        waitlist_position = db.query(func.max(Registration.waitlist_position)).filter(
+            Registration.event_id == registration.event_id,
+            Registration.status == "waitlisted"
+        ).scalar() or 0
+        
+        new_registration = Registration(
+            user_id=user.id,
+            event_id=registration.event_id,
+            ticket_code=None,
+            form_data=registration.form_data,
+            status="waitlisted",
+            waitlist_position=waitlist_position + 1
+        )
+        
+        db.add(new_registration)
+        db.commit()
+        db.refresh(new_registration)
+        return new_registration
     
     ticket_code = generate_ticket_code()
     new_registration = Registration(
         user_id=user.id,
         event_id=registration.event_id,
         ticket_code=ticket_code,
-        form_data=registration.form_data
+        form_data=registration.form_data,
+        status="confirmed",
+        waitlist_position=None
     )
     
     db.add(new_registration)
@@ -123,3 +150,103 @@ def get_event_registrations(
     
     registrations = db.query(Registration).filter(Registration.event_id == event_id).all()
     return registrations
+
+@router.delete("/{registration_id}")
+def cancel_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    
+    if registration.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this registration")
+    
+    event = db.query(Event).filter(Event.id == registration.event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    was_confirmed = registration.status == "confirmed"
+    
+    db.delete(registration)
+    db.commit()
+    
+    if was_confirmed:
+        waitlisted_users = db.query(Registration).filter(
+            Registration.event_id == event.id,
+            Registration.status == "waitlisted"
+        ).order_by(Registration.waitlist_position).all()
+        
+        if waitlisted_users:
+            next_waitlisted = waitlisted_users[0]
+            original_position = next_waitlisted.waitlist_position
+            
+            db.query(Registration).filter(
+                Registration.event_id == event.id,
+                Registration.status == "waitlisted",
+                Registration.waitlist_position > original_position
+            ).update({"waitlist_position": Registration.waitlist_position - 1})
+            
+            next_waitlisted.status = "confirmed"
+            next_waitlisted.ticket_code = generate_ticket_code()
+            next_waitlisted.waitlist_position = None
+            
+            db.commit()
+            db.refresh(next_waitlisted)
+            
+            waitlisted_user = db.query(User).filter(User.id == next_waitlisted.user_id).first()
+            if waitlisted_user:
+                send_waitlist_notification_email(waitlisted_user.email, event.title)
+    
+    return {"message": "Registration cancelled successfully"}
+
+@router.get("/event/{event_id}/waitlist", response_model=list[WaitlistResponse])
+def get_event_waitlist(
+    event_id: int,
+    db: Session = Depends(get_db),
+    organizer: User = Depends(get_current_organizer)
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    if event.organizer_id != organizer.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view waitlist for this event")
+    
+    waitlist = db.query(Registration).filter(
+        Registration.event_id == event_id,
+        Registration.status == "waitlisted"
+    ).order_by(Registration.waitlist_position).all()
+    
+    return [{
+        "registration_id": r.id,
+        "event_id": r.event_id,
+        "user_id": r.user_id,
+        "waitlist_position": r.waitlist_position,
+        "status": r.status,
+        "created_at": r.created_at
+    } for r in waitlist]
+
+@router.get("/{registration_id}/waitlist-position")
+def get_user_waitlist_position(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    
+    if registration.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this registration")
+    
+    if registration.status != "waitlisted":
+        raise HTTPException(status_code=400, detail="Registration is not on waitlist")
+    
+    return {
+        "registration_id": registration.id,
+        "event_id": registration.event_id,
+        "waitlist_position": registration.waitlist_position
+    }

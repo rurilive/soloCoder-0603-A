@@ -46,6 +46,8 @@ class Registration(Base):
     check_in_time = Column(DateTime)
     form_data = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="confirmed")
+    waitlist_position = Column(Integer, default=None)
     
     user = relationship("User", back_populates="registrations")
     event = relationship("Event", back_populates="registrations")
