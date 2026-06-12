@@ -322,19 +322,13 @@ def confirm_waitlist_offer(
                 "registration": RegistrationResponse.from_orm(registration)
             }
         else:
-            registration.status = "waitlisted"
-            registration.waitlist_offer_token = None
-            registration.waitlist_offer_sent_at = None
-            registration.waitlist_confirmed_at = None
-            
-            current_max_position = db.query(func.max(Registration.waitlist_position)).filter(
-                Registration.event_id == event.id,
-                Registration.status == "waitlisted"
-            ).scalar() or 0
-            registration.waitlist_position = current_max_position + 1
-            
+            # 用户拒绝递补，直接删除报名记录
+            registration_id = registration.id
+            registration_user_id = registration.user_id
+            db.delete(registration)
             db.commit()
             
+            # 查找下一位候补并通知
             next_waitlisted = db.query(Registration).filter(
                 Registration.event_id == event.id,
                 Registration.status == "waitlisted"
@@ -360,8 +354,8 @@ def confirm_waitlist_offer(
             
             return {
                 "success": True,
-                "message": "You have declined the waitlist offer. Your position on the waitlist has been reset.",
-                "registration": RegistrationResponse.from_orm(registration)
+                "message": "You have declined the waitlist offer. Your registration has been cancelled.",
+                "registration_id": registration_id
             }
     
     except Exception as e:
@@ -374,19 +368,12 @@ def handle_waitlist_timeout(registration: Registration, db: Session):
         return {"success": False, "message": "Event not found"}
     
     try:
-        registration.status = "waitlisted"
-        registration.waitlist_offer_token = None
-        registration.waitlist_offer_sent_at = None
-        registration.waitlist_confirmed_at = None
-        
-        current_max_position = db.query(func.max(Registration.waitlist_position)).filter(
-            Registration.event_id == event.id,
-            Registration.status == "waitlisted"
-        ).scalar() or 0
-        registration.waitlist_position = current_max_position + 1
-        
+        # 超时用户直接取消报名，不再放回候补队尾
+        registration_id = registration.id
+        db.delete(registration)
         db.commit()
         
+        # 查找下一位候补并通知
         next_waitlisted = db.query(Registration).filter(
             Registration.event_id == event.id,
             Registration.status == "waitlisted"
@@ -412,8 +399,8 @@ def handle_waitlist_timeout(registration: Registration, db: Session):
         
         return {
             "success": True,
-            "message": "The confirmation period has expired. The offer has been extended to the next waitlisted person.",
-            "registration": RegistrationResponse.from_orm(registration)
+            "message": "The confirmation period has expired. Your registration has been cancelled.",
+            "registration_id": registration_id
         }
     
     except Exception as e:

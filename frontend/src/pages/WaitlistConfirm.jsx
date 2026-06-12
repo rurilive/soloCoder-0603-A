@@ -48,7 +48,7 @@ const WaitlistConfirm = () => {
         setConfirmResult(data);
         setConfirmed(true);
       } else {
-        setError(data.message || '操作失败');
+        setError(data.detail || data.message || '操作失败');
       }
     } catch (err) {
       setError('网络请求失败');
@@ -91,6 +91,7 @@ const WaitlistConfirm = () => {
 
   if (confirmed) {
     const success = confirmResult?.success;
+    const hasTicket = confirmResult?.registration?.ticket_code;
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
@@ -101,7 +102,7 @@ const WaitlistConfirm = () => {
             {success ? '操作成功' : '操作失败'}
           </h2>
           <p className="text-gray-600 mb-4">{confirmResult?.message}</p>
-          {success && confirmResult?.registration?.ticket_code && (
+          {success && hasTicket && (
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <p className="text-sm text-gray-500">您的票码</p>
               <p className="text-lg font-mono font-bold text-blue-600">
