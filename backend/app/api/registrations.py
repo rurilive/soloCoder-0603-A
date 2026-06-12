@@ -109,7 +109,17 @@ def check_in(
 @router.get("/event/{event_id}", response_model=list[RegistrationResponse])
 def get_event_registrations(
     event_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    organizer: User = Depends(get_current_organizer)
 ):
+    # 验证活动是否存在
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # 验证主办方权限：只有该活动的主办方才能查看报名数据
+    if event.organizer_id != organizer.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view registrations for this event")
+    
     registrations = db.query(Registration).filter(Registration.event_id == event_id).all()
     return registrations
