@@ -61,6 +61,7 @@ class RegistrationResponse(BaseModel):
     status: str
     waitlist_position: Optional[int]
     waitlist_offer_sent_at: Optional[datetime]
+    waitlist_offer_token: Optional[str]
     waitlist_confirmed_at: Optional[datetime]
     
     class Config:

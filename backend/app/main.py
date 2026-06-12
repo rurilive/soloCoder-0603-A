@@ -4,10 +4,13 @@ from .database import engine, Base
 from .api.users import router as users_router
 from .api.events import router as events_router
 from .api.registrations import router as registrations_router
+from .scheduler import start_scheduler
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Event Management System", version="1.0.0")
+
+scheduler = start_scheduler()
 
 app.add_middleware(
     CORSMiddleware,
