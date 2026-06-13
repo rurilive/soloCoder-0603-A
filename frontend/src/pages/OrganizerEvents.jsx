@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { eventAPI, reportsAPI, downloadBlob } from '../api';
+import { eventAPI, reportsAPI, downloadBlobWithHeaders } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -50,21 +50,21 @@ const OrganizerEvents = () => {
     setExportMessage('');
     try {
       let resp;
-      let filename;
+      let fallbackFilename;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const safeTitle = (event.title || '活动').replace(/[\\/:*?"<>|]/g, '_');
       if (type === 'registrations') {
         resp = await reportsAPI.exportRegistrations(event.id);
-        filename = `活动报名数据_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动报名数据_${safeTitle}_${dateStr}.xlsx`;
       } else if (type === 'checkins') {
         resp = await reportsAPI.exportCheckins(event.id);
-        filename = `活动签到报告_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动签到报告_${safeTitle}_${dateStr}.xlsx`;
       } else {
         resp = await reportsAPI.exportFullReport(event.id);
-        filename = `活动完整报告_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动完整报告_${safeTitle}_${dateStr}.xlsx`;
       }
-      downloadBlob(resp.data, filename);
-      setExportMessage(`导出成功：${filename}`);
+      const finalFilename = downloadBlobWithHeaders(resp, fallbackFilename);
+      setExportMessage(`导出成功：${finalFilename}`);
       setTimeout(() => setExportMessage(''), 3000);
     } catch (err) {
       console.error('Export error:', err);

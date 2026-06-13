@@ -4,7 +4,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
-import { reportsAPI, downloadBlob, eventAPI } from '../api';
+import { reportsAPI, downloadBlobWithHeaders, eventAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
 
 const COLORS_STATUS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -58,21 +58,21 @@ const EventAnalytics = () => {
     setMessage('');
     try {
       let resp;
-      let filename;
+      let fallbackFilename;
       const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const safeTitle = (event?.title || '活动').replace(/[\\/:*?"<>|]/g, '_');
       if (type === 'registrations') {
         resp = await reportsAPI.exportRegistrations(id);
-        filename = `活动报名数据_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动报名数据_${safeTitle}_${dateStr}.xlsx`;
       } else if (type === 'checkins') {
         resp = await reportsAPI.exportCheckins(id);
-        filename = `活动签到报告_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动签到报告_${safeTitle}_${dateStr}.xlsx`;
       } else {
         resp = await reportsAPI.exportFullReport(id);
-        filename = `活动完整报告_${safeTitle}_${dateStr}.xlsx`;
+        fallbackFilename = `活动完整报告_${safeTitle}_${dateStr}.xlsx`;
       }
-      downloadBlob(resp.data, filename);
-      setMessage(`导出成功！文件已下载：${filename}`);
+      const finalFilename = downloadBlobWithHeaders(resp, fallbackFilename);
+      setMessage(`导出成功！文件已下载：${finalFilename}`);
     } catch (err) {
       console.error('Export error:', err);
       setMessage('导出失败，请重试');

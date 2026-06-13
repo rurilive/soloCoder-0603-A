@@ -53,15 +53,79 @@ export const deviceAPI = {
 export const reportsAPI = {
   getStatistics: (eventId) => api.get(`/reports/event/${eventId}/statistics`),
   exportRegistrations: (eventId) => api.get(`/reports/event/${eventId}/export/registrations`, {
-    responseType: 'blob'
+    responseType: 'blob',
   }),
   exportCheckins: (eventId) => api.get(`/reports/event/${eventId}/export/checkins`, {
-    responseType: 'blob'
+    responseType: 'blob',
   }),
   exportFullReport: (eventId) => api.get(`/reports/event/${eventId}/export/full`, {
-    responseType: 'blob'
+    responseType: 'blob',
   }),
 };
+
+export function parseFilenameFromContentDisposition(contentDisposition) {
+  if (!contentDisposition) return null;
+
+  const filenameStarMatch = contentDisposition.match(/filename\*\s*=\s*([A-Za-z0-9_-]+)''([^;]+)/i);
+  if (filenameStarMatch) {
+    try {
+      return decodeURIComponent(filenameStarMatch[2].replace(/^"|"$/g, ''));
+    } catch {
+      // ignore decode errors
+    }
+  }
+
+  const filenameUtf8Match = contentDisposition.match(/filename\s*=\s*UTF-8''([^;]+)/i);
+  if (filenameUtf8Match) {
+    try {
+      return decodeURIComponent(filenameUtf8Match[1].replace(/^"|"$/g, ''));
+    } catch {
+      // ignore decode errors
+    }
+  }
+
+  const filenameMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i);
+  if (filenameMatch) {
+    return (filenameMatch[1] || filenameMatch[2] || '').replace(/^"|"$/g, '');
+  }
+
+  return null;
+}
+
+export function extractFilenameFromResponse(response, fallbackFilename) {
+  const headers = response?.headers || {};
+  const headerNames = ['content-disposition', 'Content-Disposition'];
+  let contentDisposition = null;
+  for (const name of headerNames) {
+    if (headers[name]) {
+      contentDisposition = headers[name];
+      break;
+    }
+  }
+
+  if (contentDisposition) {
+    const parsed = parseFilenameFromContentDisposition(contentDisposition);
+    if (parsed) return parsed;
+  }
+
+  const xSuggested = headers['x-suggested-filename'] || headers['X-Suggested-Filename'];
+  if (xSuggested) {
+    try {
+      return decodeURIComponent(xSuggested);
+    } catch {
+      // ignore decode errors
+    }
+  }
+
+  return fallbackFilename || 'download.xlsx';
+}
+
+export function downloadBlobWithHeaders(response, fallbackFilename) {
+  const filename = extractFilenameFromResponse(response, fallbackFilename);
+  const blob = response?.data instanceof Blob ? response.data : response?.data?.data || response;
+  downloadBlob(blob, filename);
+  return filename;
+}
 
 export function downloadBlob(blob, filename) {
   const url = window.URL.createObjectURL(blob);

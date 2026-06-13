@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 from datetime import datetime
 from io import BytesIO
+from urllib.parse import quote
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from ..schemas import EventStatistics
@@ -80,6 +81,35 @@ def _format_dt(dt):
     if isinstance(dt, datetime):
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     return str(dt)
+
+def _sanitize_filename_for_ascii(name: str) -> str:
+    import re
+    result = re.sub(r'[\\/:*?"<>|]', '_', name)
+    ascii_name = result.encode('ascii', 'ignore').decode('ascii')
+    ascii_name = re.sub(r'_+', '_', ascii_name).strip('_')
+    if len(ascii_name) < 3 or not ascii_name.replace('_', '').replace('.', '').isalnum():
+        return None
+    return ascii_name
+
+def _build_content_disposition(filename: str, ascii_fallback: str = None) -> str:
+    utf8_encoded = quote(filename, safe='', encoding='utf-8')
+    safe_ascii = _sanitize_filename_for_ascii(ascii_fallback or filename)
+    if safe_ascii:
+        return f"attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{utf8_encoded}"
+    return f"attachment; filename*=UTF-8''{utf8_encoded}"
+
+def _make_export_response(buffer: BytesIO, filename: str, ascii_fallback: str = None) -> StreamingResponse:
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": _build_content_disposition(filename, ascii_fallback),
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Suggested-Filename": quote(filename, safe='', encoding='utf-8'),
+        }
+    )
 
 def _status_label(status):
     mapping = {
@@ -598,13 +628,10 @@ def export_registrations(
     _build_form_fields_sheet(wb, stats)
 
     buffer = _export_workbook_to_bytes(wb)
-    filename = f"活动报名数据_{event.title}_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
-    )
+    date_str = datetime.utcnow().strftime('%Y%m%d')
+    filename = f"活动报名数据_{event.title}_{date_str}.xlsx"
+    ascii_fallback = f"registrations_event{event.id}_{date_str}.xlsx"
+    return _make_export_response(buffer, filename, ascii_fallback)
 
 @router.get("/event/{event_id}/export/checkins")
 def export_checkins(
@@ -625,13 +652,10 @@ def export_checkins(
     _build_no_show_sheet(wb, event, db)
 
     buffer = _export_workbook_to_bytes(wb)
-    filename = f"活动签到报告_{event.title}_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
-    )
+    date_str = datetime.utcnow().strftime('%Y%m%d')
+    filename = f"活动签到报告_{event.title}_{date_str}.xlsx"
+    ascii_fallback = f"checkins_event{event.id}_{date_str}.xlsx"
+    return _make_export_response(buffer, filename, ascii_fallback)
 
 @router.get("/event/{event_id}/export/full")
 def export_full_report(
@@ -654,10 +678,7 @@ def export_full_report(
     _build_no_show_sheet(wb, event, db)
 
     buffer = _export_workbook_to_bytes(wb)
-    filename = f"活动完整报告_{event.title}_{datetime.utcnow().strftime('%Y%m%d')}.xlsx"
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
-    )
+    date_str = datetime.utcnow().strftime('%Y%m%d')
+    filename = f"活动完整报告_{event.title}_{date_str}.xlsx"
+    ascii_fallback = f"full_report_event{event.id}_{date_str}.xlsx"
+    return _make_export_response(buffer, filename, ascii_fallback)
