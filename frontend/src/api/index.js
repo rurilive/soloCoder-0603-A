@@ -93,22 +93,30 @@ export function parseFilenameFromContentDisposition(contentDisposition) {
 }
 
 export function extractFilenameFromResponse(response, fallbackFilename) {
-  const headers = response?.headers || {};
-  const headerNames = ['content-disposition', 'Content-Disposition'];
-  let contentDisposition = null;
-  for (const name of headerNames) {
-    if (headers[name]) {
-      contentDisposition = headers[name];
-      break;
-    }
+  if (!response) {
+    return fallbackFilename || 'download.xlsx';
   }
+
+  const headers = response.headers;
+  if (!headers) {
+    return fallbackFilename || 'download.xlsx';
+  }
+
+  const getHeader = (name) => {
+    if (typeof headers.get === 'function') {
+      return headers.get(name);
+    }
+    return headers[name.toLowerCase()] || headers[name];
+  };
+
+  const contentDisposition = getHeader('content-disposition') || getHeader('Content-Disposition');
 
   if (contentDisposition) {
     const parsed = parseFilenameFromContentDisposition(contentDisposition);
     if (parsed) return parsed;
   }
 
-  const xSuggested = headers['x-suggested-filename'] || headers['X-Suggested-Filename'];
+  const xSuggested = getHeader('x-suggested-filename') || getHeader('X-Suggested-Filename');
   if (xSuggested) {
     try {
       return decodeURIComponent(xSuggested);
@@ -122,7 +130,19 @@ export function extractFilenameFromResponse(response, fallbackFilename) {
 
 export function downloadBlobWithHeaders(response, fallbackFilename) {
   const filename = extractFilenameFromResponse(response, fallbackFilename);
-  const blob = response?.data instanceof Blob ? response.data : response?.data?.data || response;
+
+  let blob;
+  if (response.data instanceof Blob) {
+    blob = response.data;
+  } else if (response instanceof Blob) {
+    blob = response;
+  } else if (response?.data?.data instanceof Blob) {
+    blob = response.data.data;
+  } else {
+    console.warn('downloadBlobWithHeaders: No Blob found in response, response:', response);
+    blob = new Blob(['Invalid data'], { type: 'application/octet-stream' });
+  }
+
   downloadBlob(blob, filename);
   return filename;
 }
