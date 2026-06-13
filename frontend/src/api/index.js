@@ -50,4 +50,28 @@ export const deviceAPI = {
   getCheckInRecords: (eventId) => api.get(`/devices/event/${eventId}/checkin-records`),
 };
 
+export const reportsAPI = {
+  getStatistics: (eventId) => api.get(`/reports/event/${eventId}/statistics`),
+  exportRegistrations: (eventId) => api.get(`/reports/event/${eventId}/export/registrations`, {
+    responseType: 'blob'
+  }),
+  exportCheckins: (eventId) => api.get(`/reports/event/${eventId}/export/checkins`, {
+    responseType: 'blob'
+  }),
+  exportFullReport: (eventId) => api.get(`/reports/event/${eventId}/export/full`, {
+    responseType: 'blob'
+  }),
+};
+
+export function downloadBlob(blob, filename) {
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
 export default api;

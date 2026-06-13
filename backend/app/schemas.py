@@ -154,3 +154,34 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+class EventStatistics(BaseModel):
+    event_id: int
+    event_title: str
+    event_location: str
+    event_start_time: datetime
+    event_end_time: datetime
+    max_capacity: int
+    total_registrations: int
+    confirmed_registrations: int
+    waitlisted_registrations: int
+    cancelled_registrations: int
+    pending_confirmation_registrations: int
+    total_checkins: int
+    checkin_rate: float
+    registration_rate: float
+    entrance_counts: Dict[str, int]
+    checkin_timeline: List[Dict[str, Any]]
+    status_distribution: Dict[str, int]
+    registration_timeline: List[Dict[str, Any]]
+    checkin_hourly_distribution: List[Dict[str, Any]]
+    form_field_stats: List[Dict[str, Any]]
+    no_show_count: int
+    no_show_rate: float
+
+class ExportSummary(BaseModel):
+    event_id: int
+    event_title: str
+    exported_at: datetime
+    registrations_count: int
+    checkins_count: int

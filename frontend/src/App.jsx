@@ -9,6 +9,8 @@ import CreateEvent from './pages/CreateEvent';
 import MyEvents from './pages/MyEvents';
 import CheckIn from './pages/CheckIn';
 import WaitlistConfirm from './pages/WaitlistConfirm';
+import EventAnalytics from './pages/EventAnalytics';
+import OrganizerEvents from './pages/OrganizerEvents';
 
 const AppContent = () => {
   const { loading } = useAuth();
@@ -34,6 +36,8 @@ const AppContent = () => {
           <Route path="/my-events" element={<MyEvents />} />
           <Route path="/checkin" element={<CheckIn />} />
           <Route path="/waitlist/confirm/:token" element={<WaitlistConfirm />} />
+          <Route path="/event/:id/analytics" element={<EventAnalytics />} />
+          <Route path="/organizer-events" element={<OrganizerEvents />} />
         </Routes>
       </main>
     </div>
