@@ -278,7 +278,7 @@ export interface CleaningRule {
 export interface CleaningRuleCreate {
   rule_type: string;
   field_name?: string;
-  params?: Record<string, any>;
+  params: Record<string, any>;
   order_index?: number;
 }
 
