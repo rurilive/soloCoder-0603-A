@@ -4,39 +4,46 @@ import Editor from '@monaco-editor/react';
 import { scriptApi, executeApi } from '../services/api';
 import type { ScrapeRules, ExecuteResult } from '../types';
 
-const defaultCode = `import requests
-from bs4 import BeautifulSoup
-import time
+const defaultCode = `# ===== 爬虫任务管理平台脚本模板 =====
+#
+# 可用变量:
+#   rules             - 抓取规则配置对象
+#     rules.start_urls       - 起始 URL 列表
+#     rules.allowed_domains  - 允许的域名列表
+#     rules.follow_links     - 是否追踪链接 (bool)
+#     rules.max_pages        - 最大抓取页数
+#     rules.delay            - 请求延迟（秒）
+#     rules.user_agent       - User-Agent 字符串
+#     rules.custom_headers   - 自定义请求头 (dict)
+#     rules.extract_patterns - CSS 选择器提取规则 (dict)
+#
+# 可用函数:
+#   save_item(data, url="")   - 保存一条抓取结果
+#   log(message)              - 输出日志
+#   auto_crawl()              - 一键自动爬取（自动处理链接追踪、CSS 提取）
+#   fetch_page(url)           - 抓取单个页面，返回 BeautifulSoup 对象
+#
+# 推荐: 使用 auto_crawl()，自动应用抓取规则中的所有配置
 
 log("开始执行爬虫...")
-log(f"起始URL: {rules.start_urls}")
 
-headers = {
-    "User-Agent": rules.user_agent,
-    **rules.custom_headers
-}
+# 方式1：自动爬取（推荐）
+auto_crawl()
 
-for url in rules.start_urls:
-    try:
-        log(f"正在抓取: {url}")
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
+# 方式2：自定义爬取逻辑
+# import requests
+# from bs4 import BeautifulSoup
+# import time
+#
+# for url in rules.start_urls:
+#     log(f"正在抓取: {url}")
+#     resp = requests.get(url, headers={"User-Agent": rules.user_agent})
+#     soup = BeautifulSoup(resp.text, "lxml")
+#     title = soup.title.string if soup.title else "No title"
+#     save_item({"title": title, "url": url}, url)
+#     time.sleep(rules.delay)
 
-        soup = BeautifulSoup(response.text, "lxml")
-        title = soup.title.string if soup.title else "No title"
-
-        save_item({
-            "title": title,
-            "url": url,
-            "status_code": response.status_code
-        }, url)
-
-        time.sleep(rules.delay)
-
-    except Exception as e:
-        log(f"抓取失败 {url}: {str(e)}")
-
-log(f"抓取完成，共抓取 {len(results)} 条数据")
+log(f"执行完成，共 {len(results)} 条结果")
 `;
 
 const defaultRules: ScrapeRules = {
@@ -235,7 +242,14 @@ export default function ScriptEditor() {
             <div className="form-group">
               <label className="form-label">Python 代码</label>
               <div className="form-hint" style={{ marginBottom: '12px' }}>
-                可用变量：<code className="mono">rules</code>（抓取规则配置），可用函数：<code className="mono">save_item(data, url)</code>（保存数据），<code className="mono">log(message)</code>（输出日志）
+                <strong>可用变量：</strong>
+                <code className="mono">rules</code>（抓取规则配置，含 start_urls、follow_links、max_pages、delay、custom_headers、extract_patterns 等）
+                <br />
+                <strong>可用函数：</strong>
+                <code className="mono">save_item(data, url="")</code> 保存数据，
+                <code className="mono">log(message)</code> 输出日志，
+                <code className="mono">auto_crawl()</code> 一键自动爬取（含链接追踪和 CSS 提取），
+                <code className="mono">fetch_page(url)</code> 抓取单页返回 BeautifulSoup 对象
               </div>
               <div className="editor-container">
                 <Editor

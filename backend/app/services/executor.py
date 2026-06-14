@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import traceback
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -49,12 +50,15 @@ class SpiderExecutor:
 
         rules = ScrapeRules(**task.scrape_rules) if task.scrape_rules else ScrapeRules()
         max_retries = task.max_retries or 0
+        execution_id = uuid.uuid4().hex
 
         last_result = None
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 await asyncio.sleep(1)
-            last_result = await self._execute(script.code, rules, task.id, task.timeout, attempt)
+            last_result = await self._execute(
+                script.code, rules, task.id, task.timeout, attempt, execution_id
+            )
             if last_result.get("status") == "completed":
                 break
 
@@ -72,7 +76,8 @@ class SpiderExecutor:
             raise ValueError(f"Script {script_id} not found")
 
         rules = scrape_rules or ScrapeRules()
-        return await self._execute(script.code, rules, None, 60, 0)
+        execution_id = uuid.uuid4().hex
+        return await self._execute(script.code, rules, None, 60, 0, execution_id)
 
     async def execute_code(
         self,
@@ -80,7 +85,8 @@ class SpiderExecutor:
         scrape_rules: Optional[ScrapeRules] = None
     ) -> Dict[str, Any]:
         rules = scrape_rules or ScrapeRules()
-        return await self._execute(code, rules, None, 60, 0)
+        execution_id = uuid.uuid4().hex
+        return await self._execute(code, rules, None, 60, 0, execution_id)
 
     async def _execute(
         self,
@@ -88,10 +94,16 @@ class SpiderExecutor:
         rules: ScrapeRules,
         task_id: Optional[int],
         timeout: int,
-        retry_count: int = 0
+        retry_count: int = 0,
+        execution_id: Optional[str] = None
     ) -> Dict[str, Any]:
+        if execution_id is None:
+            execution_id = uuid.uuid4().hex
+
         job = SpiderJob(
             task_id=task_id or 0,
+            execution_id=execution_id,
+            retry_count=retry_count,
             status="running",
             started_at=datetime.utcnow()
         )
@@ -158,6 +170,7 @@ class SpiderExecutor:
 
             return {
                 "job_id": job.id,
+                "execution_id": execution_id,
                 "status": "completed",
                 "items_scraped": items_scraped,
                 "duration": job.duration,
@@ -176,6 +189,7 @@ class SpiderExecutor:
 
             return {
                 "job_id": job.id,
+                "execution_id": execution_id,
                 "status": "failed",
                 "items_scraped": 0,
                 "duration": job.duration,
@@ -201,6 +215,7 @@ import sys
 import json
 import traceback
 import time
+from collections import deque
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -294,7 +309,6 @@ def _extract_data(soup, url=""):
 def fetch_page(url):
     global _pages_scraped
     if _pages_scraped >= rules.max_pages:
-        log(f"达到最大页数限制 {rules.max_pages}，跳过: {url}")
         return None
 
     if url in _visited_urls:
@@ -317,27 +331,8 @@ def fetch_page(url):
         log(f"请求失败 {url}: {str(e)}")
         return None
 
-def crawl_page(url):
-    soup = fetch_page(url)
-    if soup is None:
-        return
-
-    extracted = _extract_data(soup, url)
-    if extracted:
-        save_item(extracted, url)
-        log(f"  提取到 {len(extracted)} 个字段")
-
-    if rules.follow_links and _pages_scraped < rules.max_pages:
-        links = _extract_links(soup, url)
-        log(f"  发现 {len(links)} 个链接")
-        for link in links:
-            if _pages_scraped >= rules.max_pages:
-                break
-            if link not in _visited_urls and _is_allowed_url(link):
-                time.sleep(rules.delay)
-                crawl_page(link)
-
 def auto_crawl():
+    global _pages_scraped
     log(f"开始自动爬取，起始 URL 数量: {len(rules.start_urls)}")
     log(f"配置: follow_links={rules.follow_links}, max_pages={rules.max_pages}")
     if rules.follow_links and rules.allowed_domains:
@@ -345,12 +340,38 @@ def auto_crawl():
     if rules.extract_patterns:
         log(f"提取规则: {list(rules.extract_patterns.keys())}")
 
+    url_queue = deque()
+
     for url in rules.start_urls:
-        if _pages_scraped >= rules.max_pages:
-            break
-        crawl_page(url)
-        if _pages_scraped < rules.max_pages and rules.delay > 0:
+        if url not in _visited_urls and _is_allowed_url(url):
+            url_queue.append(url)
+
+    first_request = True
+    while url_queue and _pages_scraped < rules.max_pages:
+        if not first_request and rules.delay > 0:
             time.sleep(rules.delay)
+        first_request = False
+
+        current_url = url_queue.popleft()
+        soup = fetch_page(current_url)
+        if soup is None:
+            continue
+
+        extracted = _extract_data(soup, current_url)
+        if extracted:
+            save_item(extracted, current_url)
+            log(f"  提取到 {len(extracted)} 个字段")
+
+        if rules.follow_links and _pages_scraped < rules.max_pages:
+            links = _extract_links(soup, current_url)
+            log(f"  发现 {len(links)} 个链接")
+            added = 0
+            for link in links:
+                if link not in _visited_urls and _is_allowed_url(link):
+                    url_queue.append(link)
+                    added += 1
+            if added > 0:
+                log(f"  队列中新增 {added} 个待抓取链接")
 
     log(f"爬取完成，共抓取 {_pages_scraped} 个页面，提取 {len(results)} 条结果")
 

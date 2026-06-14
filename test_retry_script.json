@@ -1,5 +1,0 @@
-{
-  "name": "失败重试测试脚本",
-  "description": "用于测试失败重试功能",
-  "code": "raise RuntimeError(\"故意抛出错误测试重试\")"
-}

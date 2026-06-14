@@ -77,6 +77,8 @@ class SpiderTask(SpiderTaskBase):
 
 class SpiderJobBase(BaseModel):
     task_id: int
+    execution_id: str = ""
+    retry_count: int = 0
     status: str = "pending"
     error_message: str = ""
 

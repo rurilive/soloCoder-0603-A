@@ -1,1 +1,0 @@
-{"code": "auto_crawl()", "scrape_rules": {"start_urls": ["http://example.com"], "allowed_domains": ["example.com", "iana.org"], "follow_links": true, "max_pages": 3, "delay": 0.5, "user_agent": "SpiderPlatform/1.0", "custom_headers": {}, "extract_patterns": {"title": "title", "h1": "h1"}}}

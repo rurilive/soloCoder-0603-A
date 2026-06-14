@@ -90,6 +90,7 @@ export interface SpiderResult {
 
 export interface ExecuteResult {
   job_id: number;
+  execution_id?: string;
   status: string;
   items_scraped: number;
   duration: number;

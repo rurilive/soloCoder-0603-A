@@ -42,6 +42,8 @@ class SpiderJob(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("spider_tasks.id"), nullable=False)
+    execution_id = Column(String(100), default="", index=True)
+    retry_count = Column(Integer, default=0)
     status = Column(String(50), default="pending")
     started_at = Column(DateTime, default=datetime.utcnow)
     finished_at = Column(DateTime, nullable=True)
