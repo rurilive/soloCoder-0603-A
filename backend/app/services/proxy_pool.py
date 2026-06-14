@@ -74,43 +74,54 @@ class ProxyPoolService:
         tag: Optional[str] = None,
         keyword: Optional[str] = None,
     ) -> Tuple[List[Proxy], int]:
-        query = select(Proxy)
-        conditions = []
+        base_conditions = []
+        tag_condition = None
 
         if status:
-            conditions.append(Proxy.status == status)
+            base_conditions.append(Proxy.status == status)
         if protocol:
-            conditions.append(Proxy.protocol == protocol)
+            base_conditions.append(Proxy.protocol == protocol)
         if keyword:
             like = f"%{keyword}%"
-            conditions.append(or_(Proxy.ip.like(like), Proxy.remark.like(like)))
+            base_conditions.append(or_(Proxy.ip.like(like), Proxy.remark.like(like)))
         if tag:
-            try:
-                json_each = func.json_each(Proxy.tags).table_valued(
-                    column("value", String)
-                )
-                tag_filter = exists(
-                    select(1)
-                    .select_from(json_each)
-                    .where(column("value") == tag)
-                    .correlate(Proxy)
-                )
-                conditions.append(tag_filter)
-            except Exception as _e:
-                logger.warning(
-                    "list_proxies 使用 sql json_each 标签过滤失败，降级为不过滤：%s", _e
-                )
+            json_each = func.json_each(Proxy.tags).table_valued(
+                column("value", String)
+            )
+            tag_condition = exists(
+                select(1)
+                .select_from(json_each)
+                .where(column("value") == tag)
+                .correlate(Proxy)
+            )
 
-        if conditions:
-            query = query.where(*conditions)
+        base_query = select(Proxy)
+        if base_conditions:
+            base_query = base_query.where(*base_conditions)
 
-        count_query = select(func.count()).select_from(query.subquery())
-        result = await self.db.execute(count_query)
-        total = result.scalar() or 0
+        full_query = base_query
+        if tag_condition is not None:
+            full_query = full_query.where(tag_condition)
 
-        query = query.order_by(Proxy.id.desc()).offset(skip).limit(limit)
-        result = await self.db.execute(query)
-        items = result.scalars().all()
+        try:
+            count_query = select(func.count()).select_from(full_query.subquery())
+            result = await self.db.execute(count_query)
+            total = result.scalar() or 0
+
+            data_query = full_query.order_by(Proxy.id.desc()).offset(skip).limit(limit)
+            result = await self.db.execute(data_query)
+            items = result.scalars().all()
+        except Exception as _e:
+            logger.warning(
+                "list_proxies 使用 sql json_each 标签过滤执行失败，降级为不过滤：%s", _e
+            )
+            count_query = select(func.count()).select_from(base_query.subquery())
+            result = await self.db.execute(count_query)
+            total = result.scalar() or 0
+
+            data_query = base_query.order_by(Proxy.id.desc()).offset(skip).limit(limit)
+            result = await self.db.execute(data_query)
+            items = result.scalars().all()
 
         return list(items), total
 
@@ -323,39 +334,47 @@ class ProxyPoolService:
         protocol: Optional[str] = None,
         tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        query = select(Proxy)
-        conditions = []
+        base_conditions = []
+        tag_condition = None
         if ids:
-            conditions.append(Proxy.id.in_(ids))
+            base_conditions.append(Proxy.id.in_(ids))
         if status:
-            conditions.append(Proxy.status == status)
+            base_conditions.append(Proxy.status == status)
         if protocol:
-            conditions.append(Proxy.protocol == protocol)
+            base_conditions.append(Proxy.protocol == protocol)
         if tags:
-            try:
-                tag_conditions = []
-                for _tag in tags:
-                    json_each = func.json_each(Proxy.tags).table_valued(
-                        column("value", String)
-                    )
-                    tag_conditions.append(
-                        exists(
-                            select(1)
-                            .select_from(json_each)
-                            .where(column("value") == _tag)
-                            .correlate(Proxy)
-                        )
-                    )
-                conditions.append(or_(*tag_conditions))
-            except Exception as _e:
-                logger.warning(
-                    "check_all_proxies 使用 sql json_each 标签过滤失败，降级为不过滤：%s", _e
+            tag_conditions = []
+            for _tag in tags:
+                json_each = func.json_each(Proxy.tags).table_valued(
+                    column("value", String)
                 )
-        if conditions:
-            query = query.where(*conditions)
+                tag_conditions.append(
+                    exists(
+                        select(1)
+                        .select_from(json_each)
+                        .where(column("value") == _tag)
+                        .correlate(Proxy)
+                    )
+                )
+            tag_condition = or_(*tag_conditions)
 
-        result = await self.db.execute(query)
-        proxies = list(result.scalars().all())
+        base_query = select(Proxy)
+        if base_conditions:
+            base_query = base_query.where(*base_conditions)
+
+        full_query = base_query
+        if tag_condition is not None:
+            full_query = full_query.where(tag_condition)
+
+        try:
+            result = await self.db.execute(full_query)
+            proxies = list(result.scalars().all())
+        except Exception as _e:
+            logger.warning(
+                "check_all_proxies 使用 sql json_each 标签过滤执行失败，降级为不过滤：%s", _e
+            )
+            result = await self.db.execute(base_query)
+            proxies = list(result.scalars().all())
 
         total = len(proxies)
         success_count = 0
@@ -524,29 +543,38 @@ class ProxyPoolService:
     async def fetch_available_proxies(
         self, tags: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        conditions = [Proxy.status == "active"]
+        base_conditions = [Proxy.status == "active"]
+        tag_condition = None
         if tags:
-            try:
-                tag_conditions = []
-                for _tag in tags:
-                    json_each = func.json_each(Proxy.tags).table_valued(
-                        column("value", String)
-                    )
-                    tag_conditions.append(
-                        exists(
-                            select(1)
-                            .select_from(json_each)
-                            .where(column("value") == _tag)
-                            .correlate(Proxy)
-                        )
-                    )
-                conditions.append(or_(*tag_conditions))
-            except Exception as _e:
-                logger.warning(
-                    "fetch_available_proxies 使用 sql json_each 标签过滤失败，降级为不过滤：%s", _e
+            tag_conditions = []
+            for _tag in tags:
+                json_each = func.json_each(Proxy.tags).table_valued(
+                    column("value", String)
                 )
-        query = select(Proxy).where(*conditions)
-        result = await self.db.execute(query)
-        proxies = list(result.scalars().all())
+                tag_conditions.append(
+                    exists(
+                        select(1)
+                        .select_from(json_each)
+                        .where(column("value") == _tag)
+                        .correlate(Proxy)
+                    )
+                )
+            tag_condition = or_(*tag_conditions)
+
+        base_query = select(Proxy).where(*base_conditions)
+
+        full_query = base_query
+        if tag_condition is not None:
+            full_query = full_query.where(tag_condition)
+
+        try:
+            result = await self.db.execute(full_query)
+            proxies = list(result.scalars().all())
+        except Exception as _e:
+            logger.warning(
+                "fetch_available_proxies 使用 sql json_each 标签过滤执行失败，降级为不过滤：%s", _e
+            )
+            result = await self.db.execute(base_query)
+            proxies = list(result.scalars().all())
 
         return [self._build_proxy_dict(p) for p in proxies]
