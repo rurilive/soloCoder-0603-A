@@ -316,9 +316,14 @@ log(f"全部爬取完成，共抓取 {{page_count}} 个列表页，{{detail_coun
             attribute = field.attribute
             required = field.required
 
+            if is_detail:
+                elem_expr = f"soup.select_one({selector!r})"
+            else:
+                elem_expr = f"item.select_one({selector!r})"
+
             if attribute == "text":
                 extract_code = f'''{indent}try:
-{indent}    elem = item.select_one({selector!r}) if not is_detail else soup.select_one({selector!r})
+{indent}    elem = {elem_expr}
 {indent}    if elem:
 {indent}        item_data[{field_name!r}] = elem.get_text(strip=True)
 {indent}    elif {required}:
@@ -328,7 +333,7 @@ log(f"全部爬取完成，共抓取 {{page_count}} 个列表页，{{detail_coun
 '''
             else:
                 extract_code = f'''{indent}try:
-{indent}    elem = item.select_one({selector!r}) if not is_detail else soup.select_one({selector!r})
+{indent}    elem = {elem_expr}
 {indent}    if elem:
 {indent}        item_data[{field_name!r}] = elem.get({attribute!r}, "")
 {indent}    elif {required}:

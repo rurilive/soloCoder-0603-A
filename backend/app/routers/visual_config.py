@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
+import asyncio
 import requests
 from bs4 import BeautifulSoup
 
@@ -181,7 +182,7 @@ async def preview_script(config_id: int, db: AsyncSession = Depends(get_db)):
 
 @router.post("/test-selector")
 async def test_selector(data: SelectorTestRequest):
-    try:
+    def _test():
         headers = {"User-Agent": "Mozilla/5.0 (compatible; SpiderPlatform/1.0)"}
         headers.update(data.headers)
 
@@ -204,7 +205,10 @@ async def test_selector(data: SelectorTestRequest):
                     "html": str(elem)[:500],
                 }
             )
+        return elements, results
 
+    try:
+        elements, results = await asyncio.to_thread(_test)
         return {
             "success": True,
             "url": data.url,
