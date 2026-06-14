@@ -1,7 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import dayjs from 'dayjs';
 import { resultsApi, taskApi } from '../services/api';
 import type { SpiderJob, SpiderResult, SpiderTask } from '../types';
+
+interface JobGroup {
+  execution_id: string;
+  jobs: SpiderJob[];
+  latest: SpiderJob;
+  totalRetries: number;
+}
 
 export default function Results() {
   const [jobs, setJobs] = useState<SpiderJob[]>([]);
@@ -12,6 +19,7 @@ export default function Results() {
   const [loadingResults, setLoadingResults] = useState(false);
   const [filterTask, setFilterTask] = useState<number | ''>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
@@ -24,7 +32,7 @@ export default function Results() {
         resultsApi.listJobs(
           filterTask ? Number(filterTask) : undefined,
           filterStatus || undefined,
-          50
+          200
         ),
         taskApi.list(),
       ]);
@@ -35,6 +43,56 @@ export default function Results() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const jobGroups = useMemo<JobGroup[]>(() => {
+    const map = new Map<string, SpiderJob[]>();
+    for (const job of jobs) {
+      const key = job.execution_id || `job-${job.id}`;
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(job);
+    }
+    const groups: JobGroup[] = [];
+    for (const [execution_id, groupJobs] of map.entries()) {
+      const sortedByRetryAsc = [...groupJobs].sort((a, b) => {
+        const aCount = a.retry_count ?? 0;
+        const bCount = b.retry_count ?? 0;
+        return aCount - bCount || a.id - b.id;
+      });
+      const sortedForLatest = [...groupJobs].sort((a, b) => {
+        const aCompleted = a.status === 'completed' ? 1 : 0;
+        const bCompleted = b.status === 'completed' ? 1 : 0;
+        if (aCompleted !== bCompleted) {
+          return bCompleted - aCompleted;
+        }
+        const aCount = a.retry_count ?? 0;
+        const bCount = b.retry_count ?? 0;
+        return bCount - aCount || b.id - a.id;
+      });
+      groups.push({
+        execution_id,
+        jobs: sortedByRetryAsc,
+        latest: sortedForLatest[0],
+        totalRetries: groupJobs.length - 1,
+      });
+    }
+    return groups.sort((a, b) =>
+      dayjs(b.latest.started_at).valueOf() - dayjs(a.latest.started_at).valueOf()
+    );
+  }, [jobs]);
+
+  const toggleGroup = (execution_id: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(execution_id)) {
+        next.delete(execution_id);
+      } else {
+        next.add(execution_id);
+      }
+      return next;
+    });
   };
 
   const loadJobResults = async (job: SpiderJob) => {
@@ -79,6 +137,101 @@ export default function Results() {
     setSelectedJob(null);
     setJobResults([]);
   };
+
+  const renderJobRow = (
+    job: SpiderJob,
+    isRetry: boolean = false,
+    hasExpandToggle: boolean = false,
+    isExpanded: boolean = false,
+    onToggle?: () => void,
+    retrySummary?: { total: number; failures: number; successes: number }
+  ) => (
+    <tr key={job.id} className={isRetry ? 'job-retry-row' : ''}>
+      <td style={{ width: '32px', textAlign: 'center' }}>
+        {hasExpandToggle ? (
+          <button className="expand-toggle" onClick={onToggle} title={isExpanded ? '收起' : '展开'}>
+            {isExpanded ? '▼' : '▶'}
+          </button>
+        ) : isRetry ? (
+          <span className="retry-indent">↳</span>
+        ) : null}
+      </td>
+      <td className="mono">
+        #{job.id}
+        {hasExpandToggle && retrySummary && retrySummary.total > 1 && (
+          <span
+            className="status-badge status-running"
+            style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px' }}
+          >
+            {retrySummary.total} 次执行
+            {retrySummary.failures > 0 && ` · ${retrySummary.failures} 次失败`}
+          </span>
+        )}
+        {!hasExpandToggle && job.retry_count > 0 && (
+          <span
+            className="status-badge status-failed"
+            style={{ marginLeft: '8px', fontSize: '11px', padding: '2px 6px' }}
+          >
+            重试 {job.retry_count}
+          </span>
+        )}
+      </td>
+      <td>{getTaskName(job.task_id)}</td>
+      <td>
+        <span className={`status-badge status-${job.status}`}>
+          {job.status === 'completed'
+            ? '成功'
+            : job.status === 'running'
+            ? '运行中'
+            : job.status === 'failed'
+            ? '失败'
+            : '等待中'}
+        </span>
+        {hasExpandToggle && retrySummary && retrySummary.successes > 0 && retrySummary.failures > 0 && (
+          <span
+            className="status-badge status-completed"
+            style={{ marginLeft: '6px', fontSize: '11px', padding: '2px 6px' }}
+          >
+            最终成功
+          </span>
+        )}
+      </td>
+      <td>{dayjs(job.started_at).format('YYYY-MM-DD HH:mm:ss')}</td>
+      <td>
+        {job.finished_at
+          ? dayjs(job.finished_at).format('YYYY-MM-DD HH:mm:ss')
+          : '-'}
+      </td>
+      <td>{job.duration}s</td>
+      <td>{job.items_scraped}</td>
+      <td>
+        <div className="action-buttons">
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => loadJobResults(job)}
+          >
+            查看详情
+          </button>
+          {job.status === 'completed' && job.items_scraped > 0 && (
+            <>
+              <button
+                className="btn btn-success btn-sm"
+                onClick={() => handleExport(job.id, 'json')}
+              >
+                JSON
+              </button>
+              <button
+                className="btn btn-success btn-sm"
+                onClick={() => handleExport(job.id, 'csv')}
+              >
+                CSV
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
 
   if (loading) {
     return (
@@ -141,6 +294,7 @@ export default function Results() {
               <table>
                 <thead>
                   <tr>
+                    <th style={{ width: '32px' }}></th>
                     <th>ID</th>
                     <th>任务</th>
                     <th>状态</th>
@@ -152,57 +306,30 @@ export default function Results() {
                   </tr>
                 </thead>
                 <tbody>
-                  {jobs.map((job) => (
-                    <tr key={job.id}>
-                      <td className="mono">#{job.id}</td>
-                      <td>{getTaskName(job.task_id)}</td>
-                      <td>
-                        <span className={`status-badge status-${job.status}`}>
-                          {job.status === 'completed'
-                            ? '成功'
-                            : job.status === 'running'
-                            ? '运行中'
-                            : job.status === 'failed'
-                            ? '失败'
-                            : '等待中'}
-                        </span>
-                      </td>
-                      <td>{dayjs(job.started_at).format('YYYY-MM-DD HH:mm:ss')}</td>
-                      <td>
-                        {job.finished_at
-                          ? dayjs(job.finished_at).format('YYYY-MM-DD HH:mm:ss')
-                          : '-'}
-                      </td>
-                      <td>{job.duration}s</td>
-                      <td>{job.items_scraped}</td>
-                      <td>
-                        <div className="action-buttons">
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => loadJobResults(job)}
-                          >
-                            查看详情
-                          </button>
-                          {job.status === 'completed' && job.items_scraped > 0 && (
-                            <>
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={() => handleExport(job.id, 'json')}
-                              >
-                                JSON
-                              </button>
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={() => handleExport(job.id, 'csv')}
-                              >
-                                CSV
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {jobGroups.flatMap((group) => {
+                    const isExpanded = expandedGroups.has(group.execution_id);
+                    const summary = {
+                      total: group.jobs.length,
+                      failures: group.jobs.filter((j) => j.status === 'failed').length,
+                      successes: group.jobs.filter((j) => j.status === 'completed').length,
+                    };
+                    const rows = [
+                      renderJobRow(
+                        group.latest,
+                        false,
+                        group.totalRetries > 0,
+                        isExpanded,
+                        () => toggleGroup(group.execution_id),
+                        summary
+                      ),
+                    ];
+                    if (isExpanded) {
+                      for (const j of group.jobs.filter((j) => j.id !== group.latest.id)) {
+                        rows.push(renderJobRow(j, true));
+                      }
+                    }
+                    return rows;
+                  })}
                 </tbody>
               </table>
             </div>
@@ -215,11 +342,25 @@ export default function Results() {
               <div className="modal-header">
                 <h2 className="modal-title">
                   执行详情 #{selectedJob.id} - {getTaskName(selectedJob.task_id)}
+                  {selectedJob.retry_count > 0 && (
+                    <span
+                      className="status-badge status-failed"
+                      style={{ marginLeft: '12px', fontSize: '12px' }}
+                    >
+                      第 {selectedJob.retry_count} 次重试
+                    </span>
+                  )}
                 </h2>
                 <button className="btn btn-secondary btn-sm" onClick={closeDetail}>
                   ✕ 关闭
                 </button>
               </div>
+
+              {selectedJob.execution_id && (
+                <div style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  执行批次 ID: <code className="mono">{selectedJob.execution_id}</code>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', flexWrap: 'wrap' }}>
                 <div>

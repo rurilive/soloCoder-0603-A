@@ -71,6 +71,8 @@ export interface SpiderTaskUpdate {
 export interface SpiderJob {
   id: number;
   task_id: number;
+  execution_id: string;
+  retry_count: number;
   status: 'pending' | 'running' | 'completed' | 'failed';
   started_at: string;
   finished_at?: string;
