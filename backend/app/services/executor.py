@@ -180,10 +180,12 @@ class SpiderExecutor:
         script_path = settings.scripts_dir / f"job_{job.id}_{uuid.uuid4().hex}.py"
 
         try:
+            api_base_url = f"http://127.0.0.1:{settings.port}/api"
             full_code = self._wrap_code(
                 code, rules, retry_count,
                 proxy_config=proxy_config, rate_config=rate_config,
                 available_proxies=available_proxies,
+                api_base_url=api_base_url,
             )
             script_path.write_text(full_code)
 
@@ -294,11 +296,13 @@ class SpiderExecutor:
         proxy_config: Optional[Dict[str, Any]] = None,
         rate_config: Optional[Dict[str, Any]] = None,
         available_proxies: Optional[List[Dict[str, Any]]] = None,
+        api_base_url: str = "http://127.0.0.1:8000/api",
     ) -> str:
         rules_json = json.dumps(rules.model_dump())
         proxy_json = json.dumps(proxy_config or {"enabled": False})
         rate_json = json.dumps(rate_config or {"enabled": True})
         proxies_json = json.dumps(available_proxies or [])
+        api_url_json = json.dumps(api_base_url)
         indented_user_code = "\n".join("    " + line for line in user_code.split("\n"))
 
         wrapper = '''
@@ -324,6 +328,7 @@ rules_data = json.loads(%r)
 _proxy_config = json.loads(%r)
 _rate_config = json.loads(%r)
 _available_proxies = json.loads(%r)
+_API_BASE_URL = json.loads(%r)
 
 class _ScrapeRules:
     def __init__(self, data):
@@ -487,7 +492,17 @@ def rotate_proxy(reason: str = ""):
         return None
 
 def report_proxy(success: bool, response_time: int = 0):
-    pass
+    import requests as _r
+    p = _proxy_selector.get_current() if _proxy_selector else None
+    if p and "id" in p:
+        try:
+            _r.post(
+                f"{_API_BASE_URL}/proxies/{p['id']}/report",
+                json={"success": success, "response_time": int(response_time)},
+                timeout=5,
+            )
+        except Exception:
+            pass
 
 # ========== 随机延迟 ==========
 def _random_delay():
@@ -641,6 +656,11 @@ def fetch_page(url, force_proxy: bool = False):
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "lxml")
             log(f"  请求成功 ({resp.status_code}, 耗时 {_rt}ms)")
+            if proxy_id is not None:
+                try:
+                    report_proxy(True, _rt)
+                except Exception:
+                    pass
             return soup
 
         except Exception as e:
@@ -649,6 +669,10 @@ def fetch_page(url, force_proxy: bool = False):
             log(f"  请求失败: {_last_error}")
             if proxy_id is not None:
                 _proxy_selector.mark_failed(proxy_id)
+                try:
+                    report_proxy(False, _rt)
+                except Exception:
+                    pass
             if _attempts < _max_attempts:
                 time.sleep(0.5)
             continue
@@ -716,7 +740,7 @@ else:
 
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
-''' % (rules_json, proxy_json, rate_json, proxies_json, indented_user_code)
+''' % (rules_json, proxy_json, rate_json, proxies_json, api_url_json, indented_user_code)
         return wrapper
 
     async def _get_cleaning_rules(self, task_id: int) -> Optional[List[Dict[str, Any]]]:

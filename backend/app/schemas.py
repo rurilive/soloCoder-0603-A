@@ -444,6 +444,11 @@ class CheckResult(BaseModel):
     error_message: str = ""
 
 
+class ReportProxyRequest(BaseModel):
+    success: bool
+    response_time: int = 0
+
+
 class BatchCheckResponse(BaseModel):
     total: int = 0
     success: int = 0

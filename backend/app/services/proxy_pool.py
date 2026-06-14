@@ -6,12 +6,17 @@ from typing import List, Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
 
 import httpx
+try:
+    from httpx_socks import AsyncProxyTransport
+except ImportError:
+    AsyncProxyTransport = None
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 from sqlalchemy.orm import joinedload
 
 from ..config import settings
 from ..models import Proxy, ProxyCheckLog
+from ..schemas import ProxyStats
 
 
 class ProxyPoolService:
@@ -72,8 +77,6 @@ class ProxyPoolService:
             conditions.append(Proxy.status == status)
         if protocol:
             conditions.append(Proxy.protocol == protocol)
-        if tag:
-            conditions.append(Proxy.tags.op("json_contains")(f'["{tag}"]'))
         if keyword:
             like = f"%{keyword}%"
             conditions.append(or_(Proxy.ip.like(like), Proxy.remark.like(like)))
@@ -81,13 +84,17 @@ class ProxyPoolService:
         if conditions:
             query = query.where(*conditions)
 
-        count_query = select(func.count()).select_from(query.subquery())
-        result = await self.db.execute(count_query)
-        total = result.scalar() or 0
-
-        query = query.order_by(Proxy.id.desc()).offset(skip).limit(limit)
         result = await self.db.execute(query)
-        items = result.scalars().all()
+        all_items = list(result.scalars().all())
+
+        if tag:
+            all_items = [
+                p for p in all_items
+                if isinstance(p.tags, list) and tag in p.tags
+            ]
+
+        total = len(all_items)
+        items = sorted(all_items, key=lambda p: p.id, reverse=True)[skip:skip + limit]
 
         return list(items), total
 
@@ -107,8 +114,7 @@ class ProxyPoolService:
         if not proxy:
             return None
         for key, value in data.items():
-            if value is not None:
-                setattr(proxy, key, value)
+            setattr(proxy, key, value)
         await self.db.commit()
         await self.db.refresh(proxy)
         return proxy
@@ -233,16 +239,24 @@ class ProxyPoolService:
                     auth += f":{proxy.password}"
                 auth += "@"
             proxy_url = f"{proxy.protocol}://{auth}{proxy.ip}:{proxy.port}"
-            proxies = {
-                "http://": proxy_url,
-                "https://": proxy_url,
-            }
 
-            async with httpx.AsyncClient(
-                proxies=proxies,
+            transport = None
+            proxy_arg = None
+            if proxy.protocol.startswith("socks") and AsyncProxyTransport:
+                transport = AsyncProxyTransport.from_url(proxy_url)
+            else:
+                proxy_arg = proxy_url
+
+            client_kwargs = dict(
                 timeout=settings.proxy_check_timeout,
                 follow_redirects=True,
-            ) as client:
+            )
+            if transport:
+                client_kwargs["transport"] = transport
+            if proxy_arg:
+                client_kwargs["proxy"] = proxy_arg
+
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 resp = await client.get(settings.proxy_check_url)
                 status_code = resp.status_code
                 success = 200 <= resp.status_code < 400
@@ -301,14 +315,18 @@ class ProxyPoolService:
             conditions.append(Proxy.status == status)
         if protocol:
             conditions.append(Proxy.protocol == protocol)
-        if tags:
-            for t in tags:
-                conditions.append(Proxy.tags.op("json_contains")(f'["{t}"]'))
         if conditions:
             query = query.where(*conditions)
 
         result = await self.db.execute(query)
-        proxies = result.scalars().all()
+        proxies = list(result.scalars().all())
+
+        if tags:
+            tag_set = set(tags)
+            proxies = [
+                p for p in proxies
+                if isinstance(p.tags, list) and tag_set.intersection(set(p.tags))
+            ]
 
         total = len(proxies)
         success_count = 0
@@ -415,10 +433,14 @@ class ProxyPoolService:
         self, tags: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         query = select(Proxy).where(Proxy.status == "active")
-        if tags:
-            for t in tags:
-                query = query.where(Proxy.tags.op("json_contains")(f'["{t}"]'))
-
         result = await self.db.execute(query)
-        proxies = result.scalars().all()
+        proxies = list(result.scalars().all())
+
+        if tags:
+            tag_set = set(tags)
+            proxies = [
+                p for p in proxies
+                if isinstance(p.tags, list) and tag_set.intersection(set(p.tags))
+            ]
+
         return [self._build_proxy_dict(p) for p in proxies]
