@@ -112,14 +112,18 @@ class CleaningEngine:
         if field_name in data:
             value = data[field_name]
             try:
-                if isinstance(value, str):
-                    value = value.strip()
-                    if "." in value:
-                        data[field_name] = float(value)
-                    else:
-                        data[field_name] = int(value)
-                elif isinstance(value, (int, float)):
+                if isinstance(value, (int, float)):
                     pass
+                elif isinstance(value, str):
+                    match = re.search(r'-?\d+\.?\d*', value)
+                    if match:
+                        number_str = match.group()
+                        if "." in number_str:
+                            data[field_name] = float(number_str)
+                        else:
+                            data[field_name] = int(number_str)
+                    else:
+                        data[field_name] = params.get("default", 0)
                 else:
                     data[field_name] = params.get("default", 0)
             except (ValueError, TypeError):

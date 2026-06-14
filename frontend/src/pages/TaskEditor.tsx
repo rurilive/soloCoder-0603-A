@@ -103,7 +103,7 @@ export default function TaskEditor() {
         name,
         description,
         script_id: Number(scriptId),
-        cleaning_pipeline_id: cleaningPipelineId ? Number(cleaningPipelineId) : null,
+        cleaning_pipeline_id: cleaningPipelineId ? Number(cleaningPipelineId) : undefined,
         cron_expression: cronExpression,
         is_enabled: isEnabled,
         scrape_rules: scrapeRules,

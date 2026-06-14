@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cleaningApi } from '../services/api';
-import type { CleaningPipeline, CleaningRule, RuleTypeInfo, CleaningRuleCreate } from '../types';
+import type { RuleTypeInfo, CleaningRuleCreate } from '../types';
 
 const defaultSampleData = [
   {
@@ -378,7 +378,7 @@ export default function CleaningPipelineEditor() {
                           {param.type === 'select' ? (
                             <select
                               className="form-select"
-                              value={rule.params[param.name] ?? param.default ?? ''}
+                              value={rule.params?.[param.name] ?? param.default ?? ''}
                               onChange={(e) => updateRuleParam(index, param.name, e.target.value)}
                             >
                               {param.options?.map((opt) => (
@@ -391,7 +391,7 @@ export default function CleaningPipelineEditor() {
                             <label className="switch" style={{ marginTop: '8px' }}>
                               <input
                                 type="checkbox"
-                                checked={rule.params[param.name] ?? param.default ?? false}
+                                checked={rule.params?.[param.name] ?? param.default ?? false}
                                 onChange={(e) => updateRuleParam(index, param.name, e.target.checked)}
                               />
                               <span className="slider"></span>
@@ -400,7 +400,7 @@ export default function CleaningPipelineEditor() {
                             <input
                               type="number"
                               className="form-input"
-                              value={rule.params[param.name] ?? param.default ?? 0}
+                              value={rule.params?.[param.name] ?? param.default ?? 0}
                               onChange={(e) => updateRuleParam(index, param.name, parseFloat(e.target.value) || 0)}
                             />
                           ) : (
@@ -408,7 +408,7 @@ export default function CleaningPipelineEditor() {
                               type="text"
                               className="form-input"
                               placeholder={`输入${param.label}`}
-                              value={rule.params[param.name] ?? ''}
+                              value={rule.params?.[param.name] ?? ''}
                               onChange={(e) => updateRuleParam(index, param.name, e.target.value)}
                             />
                           )}

@@ -25,7 +25,6 @@ import type {
   CleaningPipeline,
   CleaningPipelineCreate,
   CleaningPipelineUpdate,
-  CleaningRule,
   RuleTypeInfo,
   CleaningPreviewResponse,
 } from '../types';
