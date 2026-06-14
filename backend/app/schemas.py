@@ -258,7 +258,7 @@ class SelectorTestRequest(BaseModel):
 class CleaningRuleBase(BaseModel):
     rule_type: str
     field_name: str = ""
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: Dict[str, Any]
     order_index: int = 0
 
 
