@@ -48,7 +48,17 @@ class SpiderExecutor:
             raise ValueError(f"Script {task.script_id} not found")
 
         rules = ScrapeRules(**task.scrape_rules) if task.scrape_rules else ScrapeRules()
-        return await self._execute(script.code, rules, task.id, task.timeout)
+        max_retries = task.max_retries or 0
+
+        last_result = None
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                await asyncio.sleep(1)
+            last_result = await self._execute(script.code, rules, task.id, task.timeout, attempt)
+            if last_result.get("status") == "completed":
+                break
+
+        return last_result
 
     async def execute_script(
         self,
@@ -62,7 +72,7 @@ class SpiderExecutor:
             raise ValueError(f"Script {script_id} not found")
 
         rules = scrape_rules or ScrapeRules()
-        return await self._execute(script.code, rules, None, 60)
+        return await self._execute(script.code, rules, None, 60, 0)
 
     async def execute_code(
         self,
@@ -70,14 +80,15 @@ class SpiderExecutor:
         scrape_rules: Optional[ScrapeRules] = None
     ) -> Dict[str, Any]:
         rules = scrape_rules or ScrapeRules()
-        return await self._execute(code, rules, None, 60)
+        return await self._execute(code, rules, None, 60, 0)
 
     async def _execute(
         self,
         code: str,
         rules: ScrapeRules,
         task_id: Optional[int],
-        timeout: int
+        timeout: int,
+        retry_count: int = 0
     ) -> Dict[str, Any]:
         job = SpiderJob(
             task_id=task_id or 0,
@@ -91,7 +102,7 @@ class SpiderExecutor:
         script_path = settings.scripts_dir / f"job_{job.id}_{uuid.uuid4().hex}.py"
 
         try:
-            full_code = self._wrap_code(code, rules)
+            full_code = self._wrap_code(code, rules, retry_count)
             script_path.write_text(full_code)
 
             output_path = settings.results_dir / f"job_{job.id}_output.json"
@@ -122,6 +133,11 @@ class SpiderExecutor:
             else:
                 execution_result = {"results": [], "logs": [], "error": "No output generated"}
 
+            if execution_result.get("error"):
+                error_msg = execution_result["error"]
+                log_text = "\n".join(execution_result.get("logs", []))
+                raise RuntimeError(f"Script error: {error_msg}\n{log_text}")
+
             items_scraped = len(execution_result.get("results", []))
 
             for item in execution_result.get("results", []):
@@ -146,7 +162,8 @@ class SpiderExecutor:
                 "items_scraped": items_scraped,
                 "duration": job.duration,
                 "results": execution_result.get("results", []),
-                "logs": execution_result.get("logs", [])
+                "logs": execution_result.get("logs", []),
+                "retry_count": retry_count
             }
 
         except Exception as e:
@@ -164,7 +181,8 @@ class SpiderExecutor:
                 "duration": job.duration,
                 "results": [],
                 "logs": [],
-                "error": error_msg
+                "error": error_msg,
+                "retry_count": retry_count
             }
 
         finally:
@@ -174,7 +192,7 @@ class SpiderExecutor:
             if output_path.exists():
                 output_path.unlink()
 
-    def _wrap_code(self, user_code: str, rules: ScrapeRules) -> str:
+    def _wrap_code(self, user_code: str, rules: ScrapeRules, retry_count: int = 0) -> str:
         rules_json = json.dumps(rules.model_dump())
         indented_user_code = "\n".join("    " + line for line in user_code.split("\n"))
 
@@ -182,7 +200,15 @@ class SpiderExecutor:
 import sys
 import json
 import traceback
+import time
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    pass
 
 output_path = Path(sys.argv[1])
 
@@ -202,6 +228,8 @@ class _ScrapeRules:
 rules = _ScrapeRules(rules_data)
 results = []
 logs = []
+_visited_urls = set()
+_pages_scraped = 0
 
 def save_item(data, url=""):
     results.append({"url": url, "data": data})
@@ -210,6 +238,121 @@ def log(message):
     from datetime import datetime
     timestamp = datetime.utcnow().isoformat()
     logs.append(f"[{timestamp}] {message}")
+
+def _get_headers():
+    headers = {"User-Agent": rules.user_agent}
+    if rules.custom_headers:
+        headers.update(rules.custom_headers)
+    return headers
+
+def _is_allowed_url(url):
+    if not rules.allowed_domains:
+        return True
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        for allowed in rules.allowed_domains:
+            if domain == allowed or domain.endswith("." + allowed):
+                return True
+        return False
+    except Exception:
+        return False
+
+def _extract_links(soup, base_url):
+    links = []
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        try:
+            full_url = urljoin(base_url, href)
+            parsed = urlparse(full_url)
+            if parsed.scheme in ("http", "https"):
+                clean_url = parsed.scheme + "://" + parsed.netloc + parsed.path
+                if parsed.query:
+                    clean_url += "?" + parsed.query
+                links.append(clean_url)
+        except Exception:
+            continue
+    return links
+
+def _extract_data(soup, url=""):
+    data = {}
+    if not rules.extract_patterns:
+        return data
+    for key, selector in rules.extract_patterns.items():
+        try:
+            elements = soup.select(selector)
+            if len(elements) == 1:
+                data[key] = elements[0].get_text(strip=True)
+            elif len(elements) > 1:
+                data[key] = [el.get_text(strip=True) for el in elements]
+            else:
+                data[key] = None
+        except Exception as e:
+            data[key] = f"ERROR: {str(e)}"
+    return data
+
+def fetch_page(url):
+    global _pages_scraped
+    if _pages_scraped >= rules.max_pages:
+        log(f"达到最大页数限制 {rules.max_pages}，跳过: {url}")
+        return None
+
+    if url in _visited_urls:
+        return None
+
+    if not _is_allowed_url(url):
+        log(f"域名不在允许范围内，跳过: {url}")
+        return None
+
+    _visited_urls.add(url)
+    _pages_scraped += 1
+
+    log(f"请求页面 [{_pages_scraped}/{rules.max_pages}]: {url}")
+    try:
+        resp = requests.get(url, headers=_get_headers(), timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "lxml")
+        return soup
+    except Exception as e:
+        log(f"请求失败 {url}: {str(e)}")
+        return None
+
+def crawl_page(url):
+    soup = fetch_page(url)
+    if soup is None:
+        return
+
+    extracted = _extract_data(soup, url)
+    if extracted:
+        save_item(extracted, url)
+        log(f"  提取到 {len(extracted)} 个字段")
+
+    if rules.follow_links and _pages_scraped < rules.max_pages:
+        links = _extract_links(soup, url)
+        log(f"  发现 {len(links)} 个链接")
+        for link in links:
+            if _pages_scraped >= rules.max_pages:
+                break
+            if link not in _visited_urls and _is_allowed_url(link):
+                time.sleep(rules.delay)
+                crawl_page(link)
+
+def auto_crawl():
+    log(f"开始自动爬取，起始 URL 数量: {len(rules.start_urls)}")
+    log(f"配置: follow_links={rules.follow_links}, max_pages={rules.max_pages}")
+    if rules.follow_links and rules.allowed_domains:
+        log(f"允许的域名: {', '.join(rules.allowed_domains)}")
+    if rules.extract_patterns:
+        log(f"提取规则: {list(rules.extract_patterns.keys())}")
+
+    for url in rules.start_urls:
+        if _pages_scraped >= rules.max_pages:
+            break
+        crawl_page(url)
+        if _pages_scraped < rules.max_pages and rules.delay > 0:
+            time.sleep(rules.delay)
+
+    log(f"爬取完成，共抓取 {_pages_scraped} 个页面，提取 {len(results)} 条结果")
 
 try:
 %s

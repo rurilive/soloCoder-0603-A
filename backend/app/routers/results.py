@@ -24,7 +24,9 @@ async def list_jobs(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(SpiderJob).options(joinedload(SpiderJob.task))
+    query = select(SpiderJob).options(
+        joinedload(SpiderJob.task).joinedload(SpiderTask.script)
+    )
     if task_id:
         query = query.where(SpiderJob.task_id == task_id)
     if status:
@@ -39,7 +41,7 @@ async def list_jobs(
 async def get_job(job_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(SpiderJob)
-        .options(joinedload(SpiderJob.task))
+        .options(joinedload(SpiderJob.task).joinedload(SpiderTask.script))
         .where(SpiderJob.id == job_id)
     )
     job = result.scalar_one_or_none()

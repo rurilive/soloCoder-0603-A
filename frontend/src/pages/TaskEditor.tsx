@@ -234,15 +234,20 @@ export default function TaskEditor() {
           <h3 className="card-title" style={{ marginBottom: '20px' }}>调度配置</h3>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Cron 表达式</label>
+              <label className="form-label">
+                Cron 表达式
+                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 'normal', marginLeft: '8px' }}>
+                  （UTC 时区）
+                </span>
+              </label>
               <input
                 type="text"
                 className="form-input"
-                placeholder="如：0 0 * * *（每天0点执行）"
+                placeholder="如：0 0 * * *（每天0点 UTC 执行）"
                 value={cronExpression}
                 onChange={(e) => setCronExpression(e.target.value)}
               />
-              <div className="form-hint">留空则不自动调度，需手动执行</div>
+              <div className="form-hint">留空则不自动调度，需手动执行。时间使用 UTC 时区。</div>
             </div>
             <div className="form-group">
               <label className="form-label">
@@ -408,7 +413,12 @@ export default function TaskEditor() {
           </div>
 
           <div className="form-group">
-            <label className="form-label">提取规则（可选，用于脚本中引用）</label>
+            <label className="form-label">
+              提取规则
+              <span style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 'normal', marginLeft: '8px' }}>
+                （CSS 选择器，自动提取匹配元素文本）
+              </span>
+            </label>
             <div className="kv-pair">
               <input
                 type="text"

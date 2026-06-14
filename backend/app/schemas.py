@@ -127,3 +127,8 @@ class ExecuteRequest(BaseModel):
     task_id: Optional[int] = None
     script_id: Optional[int] = None
     scrape_rules: Optional[ScrapeRules] = None
+
+
+class ExecuteCodeRequest(BaseModel):
+    code: str
+    scrape_rules: Optional[ScrapeRules] = None

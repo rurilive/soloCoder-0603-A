@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..schemas import ExecuteRequest
+from ..schemas import ExecuteRequest, ExecuteCodeRequest
 from ..services.executor import SpiderExecutor
 
 router = APIRouter(prefix="/api/execute", tags=["execute"])
@@ -24,15 +24,9 @@ async def execute_spider(data: ExecuteRequest, db: AsyncSession = Depends(get_db
 
 
 @router.post("/code")
-async def execute_code(data: dict, db: AsyncSession = Depends(get_db)):
-    code = data.get("code", "")
-    scrape_rules = data.get("scrape_rules")
-
-    if not code:
+async def execute_code(data: ExecuteCodeRequest, db: AsyncSession = Depends(get_db)):
+    if not data.code.strip():
         raise HTTPException(status_code=400, detail="Code is required")
 
     executor = SpiderExecutor(db)
-    from ..schemas import ScrapeRules
-    rules = ScrapeRules(**scrape_rules) if scrape_rules else None
-
-    return await executor.execute_code(code, rules)
+    return await executor.execute_code(data.code, data.scrape_rules)

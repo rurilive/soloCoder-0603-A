@@ -1,0 +1,1 @@
+{"code": "auto_crawl()", "scrape_rules": {"start_urls": ["http://example.com"], "allowed_domains": ["example.com"], "follow_links": false, "max_pages": 5, "delay": 0.5, "user_agent": "SpiderPlatform/1.0", "custom_headers": {}, "extract_patterns": {"title": "title", "headings": "h1", "paragraphs": "p"}}}

@@ -96,11 +96,17 @@ export interface ExecuteResult {
   results: Array<{ url: string; data: Record<string, any> }>;
   logs: string[];
   error?: string;
+  retry_count?: number;
 }
 
 export interface ExecuteRequest {
   task_id?: number;
   script_id?: number;
+  scrape_rules?: ScrapeRules;
+}
+
+export interface ExecuteCodeRequest {
+  code: string;
   scrape_rules?: ScrapeRules;
 }
 
