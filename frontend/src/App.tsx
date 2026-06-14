@@ -6,6 +6,9 @@ import ScriptEditor from './pages/ScriptEditor';
 import TaskList from './pages/TaskList';
 import TaskEditor from './pages/TaskEditor';
 import Results from './pages/Results';
+import VisualConfigList from './pages/VisualConfigList';
+import VisualConfigEditor from './pages/VisualConfigEditor';
+import Debugger from './pages/Debugger';
 
 function App() {
   return (
@@ -15,6 +18,11 @@ function App() {
         <Route path="/scripts" element={<ScriptList />} />
         <Route path="/scripts/new" element={<ScriptEditor />} />
         <Route path="/scripts/:id" element={<ScriptEditor />} />
+        <Route path="/visual-config" element={<VisualConfigList />} />
+        <Route path="/visual-config/new" element={<VisualConfigEditor />} />
+        <Route path="/visual-config/:id" element={<VisualConfigEditor />} />
+        <Route path="/debug" element={<Debugger />} />
+        <Route path="/debug/:scriptId" element={<Debugger />} />
         <Route path="/tasks" element={<TaskList />} />
         <Route path="/tasks/new" element={<TaskEditor />} />
         <Route path="/tasks/:id" element={<TaskEditor />} />

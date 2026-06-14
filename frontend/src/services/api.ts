@@ -11,6 +11,17 @@ import type {
   ExecuteResult,
   ExecuteRequest,
   Stats,
+  VisualCrawlConfig,
+  VisualCrawlConfigCreate,
+  VisualCrawlConfigUpdate,
+  SelectorTestRequest,
+  SelectorTestResult,
+  GenerateScriptResponse,
+  PreviewScriptResponse,
+  DebugSession,
+  DebugSessionCreate,
+  DebugCommandRequest,
+  DebugSessionState,
 } from '../types';
 
 const api = axios.create({
@@ -53,6 +64,33 @@ export const resultsApi = {
   exportResults: (jobId: number, format: 'json' | 'csv') =>
     api.get(`/results/jobs/${jobId}/export/${format}`, { responseType: 'blob' }),
   getStats: () => api.get<Stats>('/results/stats'),
+};
+
+export const visualConfigApi = {
+  list: () => api.get<VisualCrawlConfig[]>('/visual-config'),
+  get: (id: number) => api.get<VisualCrawlConfig>(`/visual-config/${id}`),
+  create: (data: VisualCrawlConfigCreate) => api.post<VisualCrawlConfig>('/visual-config', data),
+  update: (id: number, data: VisualCrawlConfigUpdate) =>
+    api.put<VisualCrawlConfig>(`/visual-config/${id}`, data),
+  delete: (id: number) => api.delete(`/visual-config/${id}`),
+  generateScript: (id: number) =>
+    api.post<GenerateScriptResponse>(`/visual-config/${id}/generate-script`),
+  previewScript: (id: number) =>
+    api.post<PreviewScriptResponse>(`/visual-config/${id}/preview-script`),
+  testSelector: (data: SelectorTestRequest) =>
+    api.post<SelectorTestResult>('/visual-config/test-selector', data),
+};
+
+export const debugApi = {
+  listSessions: () => api.get<DebugSession[]>('/debug/sessions'),
+  getSession: (sessionId: string) => api.get<DebugSession>(`/debug/sessions/${sessionId}`),
+  createSession: (data: DebugSessionCreate) => api.post<DebugSession>('/debug/sessions', data),
+  startSession: (sessionId: string) =>
+    api.post<DebugSessionState>(`/debug/sessions/${sessionId}/start`),
+  executeCommand: (sessionId: string, command: DebugCommandRequest) =>
+    api.post<DebugSessionState>(`/debug/sessions/${sessionId}/command`, command),
+  getState: (sessionId: string) => api.get<DebugSessionState>(`/debug/sessions/${sessionId}/state`),
+  stopSession: (sessionId: string) => api.post(`/debug/sessions/${sessionId}/stop`),
 };
 
 export default api;

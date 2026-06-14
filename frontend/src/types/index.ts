@@ -113,6 +113,140 @@ export interface ExecuteCodeRequest {
   scrape_rules?: ScrapeRules;
 }
 
+export interface FieldSelector {
+  name: string;
+  selector: string;
+  attribute: string;
+  required: boolean;
+  description: string;
+}
+
+export interface ListCrawlConfig {
+  list_url: string;
+  item_selector: string;
+  url_selector: string;
+  url_attribute: string;
+  pagination_type: 'none' | 'next_page' | 'page_number' | 'infinite_scroll';
+  pagination_selector: string;
+  max_pages: number;
+  fields: FieldSelector[];
+}
+
+export interface DetailCrawlConfig {
+  fields: FieldSelector[];
+  follow_links: boolean;
+  link_selector: string;
+}
+
+export interface CommonCrawlConfig {
+  allowed_domains: string[];
+  delay: number;
+  user_agent: string;
+  custom_headers: Record<string, string>;
+  timeout: number;
+}
+
+export interface VisualCrawlConfig {
+  id: number;
+  name: string;
+  description: string;
+  crawl_type: 'list' | 'detail' | 'list_detail';
+  list_config: ListCrawlConfig;
+  detail_config: DetailCrawlConfig;
+  common_config: CommonCrawlConfig;
+  generated_script_id?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VisualCrawlConfigCreate {
+  name: string;
+  description?: string;
+  crawl_type: 'list' | 'detail' | 'list_detail';
+  list_config?: ListCrawlConfig;
+  detail_config?: DetailCrawlConfig;
+  common_config?: CommonCrawlConfig;
+}
+
+export interface VisualCrawlConfigUpdate {
+  name?: string;
+  description?: string;
+  crawl_type?: 'list' | 'detail' | 'list_detail';
+  list_config?: ListCrawlConfig;
+  detail_config?: DetailCrawlConfig;
+  common_config?: CommonCrawlConfig;
+}
+
+export interface SelectorTestRequest {
+  url: string;
+  selector: string;
+  attribute?: string;
+  headers?: Record<string, string>;
+}
+
+export interface SelectorTestResult {
+  success: boolean;
+  url: string;
+  selector: string;
+  attribute: string;
+  matches: number;
+  results: Array<{
+    index: number;
+    value: string;
+    html: string;
+  }>;
+  error?: string;
+}
+
+export interface GenerateScriptResponse {
+  script_id: number;
+  script_name: string;
+  code: string;
+  scrape_rules: ScrapeRules;
+}
+
+export interface PreviewScriptResponse {
+  code: string;
+  scrape_rules: ScrapeRules;
+}
+
+export interface DebugSession {
+  id: number;
+  session_id: string;
+  script_id?: number;
+  code: string;
+  scrape_rules?: ScrapeRules;
+  status: 'idle' | 'running' | 'paused' | 'finished' | 'error' | 'stopped';
+  current_line: number;
+  breakpoints: number[];
+  variables: Record<string, any>;
+  output: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DebugSessionCreate {
+  script_id?: number;
+  code: string;
+  scrape_rules?: ScrapeRules;
+}
+
+export interface DebugCommandRequest {
+  session_id: string;
+  command: 'step' | 'continue' | 'stop' | 'next' | 'return';
+  breakpoints?: number[];
+}
+
+export interface DebugSessionState {
+  session_id: string;
+  status: 'idle' | 'running' | 'paused' | 'finished' | 'error' | 'stopped';
+  current_line: number;
+  breakpoints: number[];
+  variables: Record<string, any>;
+  output: string[];
+  error?: string;
+}
+
 export interface Stats {
   jobs: {
     total: number;

@@ -7,7 +7,9 @@ interface LayoutProps {
 
 const navItems = [
   { path: '/', label: '仪表盘', icon: '📊' },
+  { path: '/visual-config', label: '可视化配置', icon: '🎛️' },
   { path: '/scripts', label: '脚本管理', icon: '📝' },
+  { path: '/debug', label: '脚本调试', icon: '🐛' },
   { path: '/tasks', label: '任务管理', icon: '⏰' },
   { path: '/results', label: '执行结果', icon: '📋' },
 ];

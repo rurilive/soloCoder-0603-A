@@ -65,3 +65,39 @@ class SpiderResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("SpiderJob", back_populates="results")
+
+
+class VisualCrawlConfig(Base):
+    __tablename__ = "visual_crawl_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    crawl_type = Column(String(50), nullable=False)
+    list_config = Column(JSON, default=dict)
+    detail_config = Column(JSON, default=dict)
+    common_config = Column(JSON, default=dict)
+    generated_script_id = Column(Integer, ForeignKey("spider_scripts.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    generated_script = relationship("SpiderScript", foreign_keys=[generated_script_id])
+
+
+class DebugSession(Base):
+    __tablename__ = "debug_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(100), unique=True, index=True, nullable=False)
+    script_id = Column(Integer, ForeignKey("spider_scripts.id"), nullable=True)
+    code = Column(Text, nullable=False)
+    scrape_rules = Column(JSON, default=dict)
+    status = Column(String(50), default="idle")
+    current_line = Column(Integer, default=0)
+    breakpoints = Column(JSON, default=list)
+    variables = Column(JSON, default=dict)
+    output = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    script = relationship("SpiderScript")

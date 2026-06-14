@@ -134,3 +134,121 @@ class ExecuteRequest(BaseModel):
 class ExecuteCodeRequest(BaseModel):
     code: str
     scrape_rules: Optional[ScrapeRules] = None
+
+
+class FieldSelector(BaseModel):
+    name: str
+    selector: str
+    attribute: str = "text"
+    required: bool = False
+    description: str = ""
+
+
+class ListCrawlConfig(BaseModel):
+    list_url: str = ""
+    item_selector: str = ""
+    url_selector: str = ""
+    url_attribute: str = "href"
+    pagination_type: str = "none"
+    pagination_selector: str = ""
+    max_pages: int = 10
+    fields: List[FieldSelector] = Field(default_factory=list)
+
+
+class DetailCrawlConfig(BaseModel):
+    fields: List[FieldSelector] = Field(default_factory=list)
+    follow_links: bool = False
+    link_selector: str = ""
+
+
+class CommonCrawlConfig(BaseModel):
+    allowed_domains: List[str] = Field(default_factory=list)
+    delay: float = 0.5
+    user_agent: str = "Mozilla/5.0 (compatible; SpiderPlatform/1.0)"
+    custom_headers: Dict[str, str] = Field(default_factory=dict)
+    timeout: int = 30
+
+
+class VisualCrawlConfigBase(BaseModel):
+    name: str
+    description: str = ""
+    crawl_type: str
+    list_config: ListCrawlConfig = Field(default_factory=ListCrawlConfig)
+    detail_config: DetailCrawlConfig = Field(default_factory=DetailCrawlConfig)
+    common_config: CommonCrawlConfig = Field(default_factory=CommonCrawlConfig)
+
+
+class VisualCrawlConfigCreate(VisualCrawlConfigBase):
+    pass
+
+
+class VisualCrawlConfigUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    crawl_type: Optional[str] = None
+    list_config: Optional[ListCrawlConfig] = None
+    detail_config: Optional[DetailCrawlConfig] = None
+    common_config: Optional[CommonCrawlConfig] = None
+
+
+class VisualCrawlConfig(VisualCrawlConfigBase):
+    id: int
+    generated_script_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class GenerateScriptRequest(BaseModel):
+    config_id: int
+    save_script: bool = True
+
+
+class DebugSessionBase(BaseModel):
+    script_id: Optional[int] = None
+    code: str
+    scrape_rules: Optional[ScrapeRules] = None
+
+
+class DebugSessionCreate(DebugSessionBase):
+    pass
+
+
+class DebugCommand(BaseModel):
+    session_id: str
+    command: str
+    breakpoints: List[int] = Field(default_factory=list)
+
+
+class DebugSessionState(BaseModel):
+    session_id: str
+    status: str
+    current_line: int
+    breakpoints: List[int]
+    variables: Dict[str, Any]
+    output: List[str]
+    error: Optional[str] = None
+
+
+class DebugSession(DebugSessionBase):
+    id: int
+    session_id: str
+    status: str
+    current_line: int
+    breakpoints: List[int]
+    variables: Dict[str, Any]
+    output: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SelectorTestRequest(BaseModel):
+    url: str
+    selector: str
+    attribute: str = "text"
+    headers: Dict[str, str] = Field(default_factory=dict)
