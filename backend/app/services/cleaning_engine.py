@@ -119,18 +119,13 @@ class CleaningEngine:
                     if stripped.count(".") > 1:
                         data[field_name] = params.get("default", 0)
                         return data
-                    match = re.search(r'-?\d+\.?\d*', stripped)
+                    match = re.fullmatch(r'-?\d+\.?\d*', stripped)
                     if match:
                         number_str = match.group()
-                        prefix = stripped[:match.start()]
-                        suffix = stripped[match.end():]
-                        if re.search(r'[a-zA-Z]', prefix + suffix):
-                            data[field_name] = params.get("default", 0)
+                        if "." in number_str:
+                            data[field_name] = float(number_str)
                         else:
-                            if "." in number_str:
-                                data[field_name] = float(number_str)
-                            else:
-                                data[field_name] = int(number_str)
+                            data[field_name] = int(number_str)
                     else:
                         data[field_name] = params.get("default", 0)
                 else:
