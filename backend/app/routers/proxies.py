@@ -33,6 +33,13 @@ async def list_proxies(
     }
 
 
+@router.post("", response_model=schemas.Proxy)
+async def create_proxy(data: schemas.ProxyCreate, db: AsyncSession = Depends(get_db)):
+    service = ProxyPoolService(db)
+    proxy = await service.create_proxy(data.model_dump())
+    return schemas.Proxy.model_validate(proxy)
+
+
 @router.get("/stats", response_model=schemas.ProxyStats)
 async def get_proxy_stats(db: AsyncSession = Depends(get_db)):
     service = ProxyPoolService(db)
@@ -55,22 +62,6 @@ async def update_proxy_settings(
     return saved
 
 
-@router.get("/{proxy_id}", response_model=schemas.Proxy)
-async def get_proxy(proxy_id: int, db: AsyncSession = Depends(get_db)):
-    service = ProxyPoolService(db)
-    proxy = await service.get_proxy(proxy_id)
-    if not proxy:
-        raise HTTPException(status_code=404, detail="Proxy not found")
-    return schemas.Proxy.model_validate(proxy)
-
-
-@router.post("", response_model=schemas.Proxy)
-async def create_proxy(data: schemas.ProxyCreate, db: AsyncSession = Depends(get_db)):
-    service = ProxyPoolService(db)
-    proxy = await service.create_proxy(data.model_dump())
-    return schemas.Proxy.model_validate(proxy)
-
-
 @router.post("/batch", response_model=dict)
 async def batch_import_proxies(
     data: schemas.BatchImportRequest, db: AsyncSession = Depends(get_db)
@@ -78,17 +69,6 @@ async def batch_import_proxies(
     service = ProxyPoolService(db)
     count, skipped = await service.batch_import(data.text)
     return {"imported": count, "skipped": skipped, "total": count + len(skipped)}
-
-
-@router.put("/{proxy_id}", response_model=schemas.Proxy)
-async def update_proxy(
-    proxy_id: int, data: schemas.ProxyUpdate, db: AsyncSession = Depends(get_db)
-):
-    service = ProxyPoolService(db)
-    proxy = await service.update_proxy(proxy_id, data.model_dump(exclude_unset=True))
-    if not proxy:
-        raise HTTPException(status_code=404, detail="Proxy not found")
-    return schemas.Proxy.model_validate(proxy)
 
 
 @router.delete("/batch", response_model=dict)
@@ -109,6 +89,43 @@ async def batch_check_proxies(
         ids=data.ids, status=data.status, protocol=data.protocol, tags=data.tags
     )
     return schemas.BatchCheckResponse(**result)
+
+
+@router.get("/check-logs/{proxy_id}", response_model=dict)
+async def get_check_logs(
+    proxy_id: int,
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    service = ProxyPoolService(db)
+    logs, total = await service.get_check_logs(proxy_id, skip=skip, limit=limit)
+    return {
+        "items": [schemas.ProxyCheckLog.model_validate(l) for l in logs],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
+
+
+@router.get("/{proxy_id}", response_model=schemas.Proxy)
+async def get_proxy(proxy_id: int, db: AsyncSession = Depends(get_db)):
+    service = ProxyPoolService(db)
+    proxy = await service.get_proxy(proxy_id)
+    if not proxy:
+        raise HTTPException(status_code=404, detail="Proxy not found")
+    return schemas.Proxy.model_validate(proxy)
+
+
+@router.put("/{proxy_id}", response_model=schemas.Proxy)
+async def update_proxy(
+    proxy_id: int, data: schemas.ProxyUpdate, db: AsyncSession = Depends(get_db)
+):
+    service = ProxyPoolService(db)
+    proxy = await service.update_proxy(proxy_id, data.model_dump(exclude_unset=True))
+    if not proxy:
+        raise HTTPException(status_code=404, detail="Proxy not found")
+    return schemas.Proxy.model_validate(proxy)
 
 
 @router.delete("/{proxy_id}", response_model=dict)
@@ -141,20 +158,3 @@ async def report_proxy(
         raise HTTPException(status_code=404, detail="Proxy not found")
     await service.report_proxy_result(proxy_id, data.success, data.response_time)
     return {"success": True}
-
-
-@router.get("/check-logs/{proxy_id}", response_model=dict)
-async def get_check_logs(
-    proxy_id: int,
-    skip: int = 0,
-    limit: int = 50,
-    db: AsyncSession = Depends(get_db),
-):
-    service = ProxyPoolService(db)
-    logs, total = await service.get_check_logs(proxy_id, skip=skip, limit=limit)
-    return {
-        "items": [schemas.ProxyCheckLog.model_validate(l) for l in logs],
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
