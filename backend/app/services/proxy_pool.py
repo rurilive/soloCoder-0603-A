@@ -11,12 +11,13 @@ try:
 except ImportError:
     AsyncProxyTransport = None
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, case, column, exists
+from sqlalchemy.types import String
 from sqlalchemy.orm import joinedload
 
 from ..config import settings
-from ..models import Proxy, ProxyCheckLog
-from ..schemas import ProxyStats
+from ..models import Proxy, ProxyCheckLog, SystemSetting
+from ..schemas import ProxyStats, ProxySettings
 
 
 class ProxyPoolService:
@@ -80,21 +81,31 @@ class ProxyPoolService:
         if keyword:
             like = f"%{keyword}%"
             conditions.append(or_(Proxy.ip.like(like), Proxy.remark.like(like)))
+        if tag:
+            try:
+                json_each = func.json_each(Proxy.tags).table_valued(
+                    column("value", String)
+                )
+                tag_filter = exists(
+                    select(1)
+                    .select_from(json_each)
+                    .where(column("value") == tag)
+                    .correlate(Proxy)
+                )
+                conditions.append(tag_filter)
+            except Exception:
+                pass
 
         if conditions:
             query = query.where(*conditions)
 
+        count_query = select(func.count()).select_from(query.subquery())
+        result = await self.db.execute(count_query)
+        total = result.scalar() or 0
+
+        query = query.order_by(Proxy.id.desc()).offset(skip).limit(limit)
         result = await self.db.execute(query)
-        all_items = list(result.scalars().all())
-
-        if tag:
-            all_items = [
-                p for p in all_items
-                if isinstance(p.tags, list) and tag in p.tags
-            ]
-
-        total = len(all_items)
-        items = sorted(all_items, key=lambda p: p.id, reverse=True)[skip:skip + limit]
+        items = result.scalars().all()
 
         return list(items), total
 
@@ -369,38 +380,101 @@ class ProxyPoolService:
     async def get_stats(self) -> ProxyStats:
         from ..schemas import ProxyStats as ProxyStatsSchema
 
-        result = await self.db.execute(select(Proxy))
-        proxies = result.scalars().all()
+        total_query = select(
+            func.count().label("total"),
+            func.sum(case((Proxy.status == "active", 1), else_=0)).label("active"),
+            func.sum(case((Proxy.status == "inactive", 1), else_=0)).label("inactive"),
+            func.sum(case((Proxy.status == "checking", 1), else_=0)).label("checking"),
+            func.sum(case((Proxy.status == "failed", 1), else_=0)).label("failed"),
+            func.avg(
+                case(
+                    (
+                        (Proxy.success_count + Proxy.fail_count) > 0,
+                        Proxy.success_count * 100.0 / (Proxy.success_count + Proxy.fail_count),
+                    ),
+                    else_=None,
+                )
+            ).label("avg_success_rate"),
+            func.avg(
+                case(
+                    (Proxy.response_time > 0, Proxy.response_time),
+                    else_=None,
+                )
+            ).label("avg_response_time"),
+        )
 
-        stats = ProxyStatsSchema(total=len(proxies))
-        success_rates = []
-        response_times = []
+        result = await self.db.execute(total_query)
+        row = result.fetchone() or (0, 0, 0, 0, 0, None, None)
 
-        for p in proxies:
-            if p.status == "active":
-                stats.active += 1
-            elif p.status == "inactive":
-                stats.inactive += 1
-            elif p.status == "checking":
-                stats.checking += 1
-            elif p.status == "failed":
-                stats.failed += 1
+        total, active, inactive, checking, failed, avg_sr, avg_rt = row
+        stats = ProxyStatsSchema(
+            total=total or 0,
+            active=active or 0,
+            inactive=inactive or 0,
+            checking=checking or 0,
+            failed=failed or 0,
+            avg_success_rate=round(float(avg_sr or 0), 2),
+            avg_response_time=round(float(avg_rt or 0), 2),
+        )
 
-            proto = p.protocol or "http"
-            stats.by_protocol[proto] = stats.by_protocol.get(proto, 0) + 1
+        proto_query = select(
+            Proxy.protocol,
+            func.count().label("cnt"),
+        ).group_by(Proxy.protocol)
 
-            total = (p.success_count or 0) + (p.fail_count or 0)
-            if total > 0:
-                success_rates.append((p.success_count or 0) / total)
-            if p.response_time:
-                response_times.append(p.response_time)
-
-        if success_rates:
-            stats.avg_success_rate = round(sum(success_rates) / len(success_rates) * 100, 2)
-        if response_times:
-            stats.avg_response_time = round(sum(response_times) / len(response_times), 2)
+        result = await self.db.execute(proto_query)
+        for proto, cnt in result.fetchall():
+            stats.by_protocol[proto or "http"] = int(cnt or 0)
 
         return stats
+
+    async def get_settings(self) -> ProxySettings:
+        setting_keys = [
+            "proxy_check_enabled",
+            "proxy_check_interval",
+            "proxy_check_url",
+            "proxy_check_timeout",
+            "default_proxy_rotation_strategy",
+            "default_rate_limit_per_minute",
+            "default_delay_min",
+            "default_delay_max",
+        ]
+
+        query = select(SystemSetting).where(SystemSetting.key.in_(setting_keys))
+        result = await self.db.execute(query)
+        db_settings = {row.key: row.value for row in result.scalars().all()}
+
+        defaults = {
+            "proxy_check_enabled": settings.proxy_check_enabled,
+            "proxy_check_interval": settings.proxy_check_interval,
+            "proxy_check_url": settings.proxy_check_url,
+            "proxy_check_timeout": settings.proxy_check_timeout,
+            "default_proxy_rotation_strategy": settings.default_proxy_rotation_strategy,
+            "default_rate_limit_per_minute": settings.default_rate_limit_per_minute,
+            "default_delay_min": settings.default_delay_min,
+            "default_delay_max": settings.default_delay_max,
+        }
+
+        data = {}
+        for k in setting_keys:
+            data[k] = db_settings.get(k, defaults[k])
+
+        return ProxySettings(**data)
+
+    async def save_settings(self, settings_data: ProxySettings) -> ProxySettings:
+        data = settings_data.model_dump()
+        for key, value in data.items():
+            result = await self.db.execute(
+                select(SystemSetting).where(SystemSetting.key == key)
+            )
+            setting = result.scalar_one_or_none()
+            if setting:
+                setting.value = value
+            else:
+                setting = SystemSetting(key=key, value=value)
+                self.db.add(setting)
+        await self.db.commit()
+        return await self.get_settings()
 
     async def report_proxy_result(
         self, proxy_id: int, success: bool, response_time: int = 0

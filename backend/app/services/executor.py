@@ -650,6 +650,10 @@ def fetch_page(url, force_proxy: bool = False):
                 log(f"  收到 {resp.status_code}，尝试切换代理")
                 if proxy_id is not None:
                     _proxy_selector.mark_failed(proxy_id)
+                    try:
+                        report_proxy(False, _rt)
+                    except Exception:
+                        pass
                 time.sleep(1)
                 continue
 

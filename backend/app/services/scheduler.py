@@ -35,7 +35,7 @@ class TaskScheduler:
         if not self.scheduler.running:
             self.scheduler.start()
             await self._load_scheduled_tasks()
-            self._schedule_proxy_check()
+            await self._schedule_proxy_check()
 
     async def shutdown(self):
         if self.scheduler.running:
@@ -54,17 +54,30 @@ class TaskScheduler:
             for task in tasks:
                 self.schedule_task(task.id, task.cron_expression)
 
-    def _schedule_proxy_check(self):
-        if settings.proxy_check_enabled and settings.proxy_check_interval > 0:
-            job_id = "proxy_check_job"
-            if self.scheduler.get_job(job_id):
-                self.scheduler.remove_job(job_id)
+    async def _schedule_proxy_check(self):
+        async with AsyncSessionLocal() as db:
+            service = ProxyPoolService(db)
+            try:
+                s = await service.get_settings()
+                enabled = s.proxy_check_enabled
+                interval = s.proxy_check_interval
+            except Exception:
+                enabled = settings.proxy_check_enabled
+                interval = settings.proxy_check_interval
+
+        job_id = "proxy_check_job"
+        if self.scheduler.get_job(job_id):
+            self.scheduler.remove_job(job_id)
+        if enabled and interval > 0:
             self.scheduler.add_job(
                 self._proxy_check_job,
-                trigger=IntervalTrigger(minutes=settings.proxy_check_interval),
+                trigger=IntervalTrigger(minutes=interval),
                 id=job_id,
                 replace_existing=True,
             )
+
+    async def reschedule_proxy_check(self):
+        await self._schedule_proxy_check()
 
     async def _proxy_check_job(self):
         try:

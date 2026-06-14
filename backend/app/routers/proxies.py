@@ -6,6 +6,7 @@ from ..database import get_db
 from .. import schemas
 from ..config import settings
 from ..services.proxy_pool import ProxyPoolService
+from ..services.scheduler import scheduler
 
 router = APIRouter(prefix="/api/proxies", tags=["proxies"])
 
@@ -39,30 +40,19 @@ async def get_proxy_stats(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/settings", response_model=schemas.ProxySettings)
-async def get_proxy_settings():
-    return schemas.ProxySettings(
-        proxy_check_enabled=settings.proxy_check_enabled,
-        proxy_check_interval=settings.proxy_check_interval,
-        proxy_check_url=settings.proxy_check_url,
-        proxy_check_timeout=settings.proxy_check_timeout,
-        default_proxy_rotation_strategy=settings.default_proxy_rotation_strategy,
-        default_rate_limit_per_minute=settings.default_rate_limit_per_minute,
-        default_delay_min=settings.default_delay_min,
-        default_delay_max=settings.default_delay_max,
-    )
+async def get_proxy_settings(db: AsyncSession = Depends(get_db)):
+    service = ProxyPoolService(db)
+    return await service.get_settings()
 
 
 @router.put("/settings", response_model=schemas.ProxySettings)
-async def update_proxy_settings(data: schemas.ProxySettings):
-    settings.proxy_check_enabled = data.proxy_check_enabled
-    settings.proxy_check_interval = data.proxy_check_interval
-    settings.proxy_check_url = data.proxy_check_url
-    settings.proxy_check_timeout = data.proxy_check_timeout
-    settings.default_proxy_rotation_strategy = data.default_proxy_rotation_strategy
-    settings.default_rate_limit_per_minute = data.default_rate_limit_per_minute
-    settings.default_delay_min = data.default_delay_min
-    settings.default_delay_max = data.default_delay_max
-    return data
+async def update_proxy_settings(
+    data: schemas.ProxySettings, db: AsyncSession = Depends(get_db)
+):
+    service = ProxyPoolService(db)
+    saved = await service.save_settings(data)
+    await scheduler.reschedule_proxy_check()
+    return saved
 
 
 @router.get("/{proxy_id}", response_model=schemas.Proxy)
