@@ -23,17 +23,13 @@ export default function Results() {
 
   useEffect(() => {
     loadData();
-  }, [filterTask, filterStatus]);
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [jobsRes, tasksRes] = await Promise.all([
-        resultsApi.listJobs(
-          filterTask ? Number(filterTask) : undefined,
-          filterStatus || undefined,
-          200
-        ),
+        resultsApi.listJobs(undefined, undefined, 500),
         taskApi.list(),
       ]);
       setJobs(jobsRes.data);
@@ -45,9 +41,21 @@ export default function Results() {
     }
   };
 
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      if (filterTask && job.task_id !== Number(filterTask)) {
+        return false;
+      }
+      if (filterStatus && job.status !== filterStatus) {
+        return false;
+      }
+      return true;
+    });
+  }, [jobs, filterTask, filterStatus]);
+
   const jobGroups = useMemo<JobGroup[]>(() => {
     const map = new Map<string, SpiderJob[]>();
-    for (const job of jobs) {
+    for (const job of filteredJobs) {
       const key = job.execution_id || `job-${job.id}`;
       if (!map.has(key)) {
         map.set(key, []);
@@ -81,7 +89,7 @@ export default function Results() {
     return groups.sort((a, b) =>
       dayjs(b.latest.started_at).valueOf() - dayjs(a.latest.started_at).valueOf()
     );
-  }, [jobs]);
+  }, [filteredJobs]);
 
   const toggleGroup = (execution_id: string) => {
     setExpandedGroups((prev) => {
@@ -283,11 +291,11 @@ export default function Results() {
             </div>
           </div>
 
-          {jobs.length === 0 ? (
+          {jobGroups.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">📋</div>
               <div className="empty-state-title">暂无执行记录</div>
-              <p>运行爬虫任务后，执行记录将显示在这里</p>
+              <p>{jobs.length > 0 ? '当前筛选条件下没有匹配的记录' : '运行爬虫任务后，执行记录将显示在这里'}</p>
             </div>
           ) : (
             <div className="table-container">
