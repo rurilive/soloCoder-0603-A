@@ -1,187 +1,129 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, List, Any
 
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    is_organizer: Optional[bool] = False
 
-class UserResponse(BaseModel):
-    id: int
-    username: str
-    email: EmailStr
-    is_organizer: bool
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+class ScrapeRules(BaseModel):
+    start_urls: List[str] = Field(default_factory=list)
+    allowed_domains: List[str] = Field(default_factory=list)
+    follow_links: bool = False
+    max_pages: int = 100
+    delay: float = 0.5
+    user_agent: str = "Mozilla/5.0 (compatible; SpiderPlatform/1.0)"
+    custom_headers: Dict[str, str] = Field(default_factory=dict)
+    extract_patterns: Dict[str, str] = Field(default_factory=dict)
 
-class EventCreate(BaseModel):
-    title: str
+
+class SpiderScriptBase(BaseModel):
+    name: str
+    description: str = ""
+    code: str
+
+
+class SpiderScriptCreate(SpiderScriptBase):
+    pass
+
+
+class SpiderScriptUpdate(BaseModel):
+    name: Optional[str] = None
     description: Optional[str] = None
-    start_time: datetime
-    end_time: datetime
-    location: str
-    max_capacity: int
-    registration_form: Optional[List[Dict[str, Any]]] = None
+    code: Optional[str] = None
 
-class EventResponse(BaseModel):
+
+class SpiderScript(SpiderScriptBase):
     id: int
-    title: str
-    description: Optional[str]
-    start_time: datetime
-    end_time: datetime
-    location: str
-    max_capacity: int
-    registration_form: Optional[List[Dict[str, Any]]]
-    status: str
-    organizer_id: int
     created_at: datetime
     updated_at: datetime
-    registered_count: int
-    
+
     class Config:
         from_attributes = True
 
-class RegistrationCreate(BaseModel):
-    event_id: int
-    form_data: Optional[Dict[str, Any]] = None
 
-class RegistrationResponse(BaseModel):
+class SpiderTaskBase(BaseModel):
+    name: str
+    description: str = ""
+    script_id: int
+    cron_expression: str = ""
+    is_enabled: bool = True
+    scrape_rules: ScrapeRules = Field(default_factory=ScrapeRules)
+    timeout: int = 60
+    max_retries: int = 3
+
+
+class SpiderTaskCreate(SpiderTaskBase):
+    pass
+
+
+class SpiderTaskUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    script_id: Optional[int] = None
+    cron_expression: Optional[str] = None
+    is_enabled: Optional[bool] = None
+    scrape_rules: Optional[ScrapeRules] = None
+    timeout: Optional[int] = None
+    max_retries: Optional[int] = None
+
+
+class SpiderTask(SpiderTaskBase):
     id: int
-    user_id: int
-    event_id: int
-    ticket_code: Optional[str]
-    check_in: bool
-    check_in_time: Optional[datetime]
-    form_data: Optional[Dict[str, Any]]
-    created_at: datetime
-    status: str
-    waitlist_position: Optional[int]
-    waitlist_offer_sent_at: Optional[datetime]
-    waitlist_offer_token: Optional[str]
-    waitlist_confirmed_at: Optional[datetime]
-    
-    class Config:
-        from_attributes = True
-
-class WaitlistConfirmRequest(BaseModel):
-    token: str
-    accept: bool
-
-class WaitlistConfirmResponse(BaseModel):
-    success: bool
-    message: str
-    registration: Optional[RegistrationResponse]
-    
-    class Config:
-        from_attributes = True
-
-class WaitlistResponse(BaseModel):
-    registration_id: int
-    event_id: int
-    user_id: int
-    waitlist_position: int
-    status: str
-    created_at: datetime
-
-class EventWithWaitlistResponse(BaseModel):
-    id: int
-    title: str
-    description: Optional[str]
-    start_time: datetime
-    end_time: datetime
-    location: str
-    max_capacity: int
-    registration_form: Optional[List[Dict[str, Any]]]
-    status: str
-    organizer_id: int
     created_at: datetime
     updated_at: datetime
-    registered_count: int
-    waitlist_count: int
-    
+    script: Optional[SpiderScript] = None
+
     class Config:
         from_attributes = True
 
-class CheckInRequest(BaseModel):
-    ticket_code: str
-    device_id: Optional[str] = None
 
-class DeviceCreate(BaseModel):
-    device_id: str
-    name: str
-    entrance: str
-    event_id: int
-    is_active: Optional[bool] = True
+class SpiderJobBase(BaseModel):
+    task_id: int
+    status: str = "pending"
+    error_message: str = ""
 
-class DeviceResponse(BaseModel):
+
+class SpiderJobCreate(SpiderJobBase):
+    pass
+
+
+class SpiderJobUpdate(BaseModel):
+    status: Optional[str] = None
+    finished_at: Optional[datetime] = None
+    duration: Optional[int] = None
+    items_scraped: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+class SpiderJob(SpiderJobBase):
     id: int
-    device_id: str
-    name: str
-    entrance: str
-    event_id: int
-    is_active: bool
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    duration: int = 0
+    items_scraped: int = 0
+    task: Optional[SpiderTask] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SpiderResultBase(BaseModel):
+    job_id: int
+    url: str = ""
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SpiderResultCreate(SpiderResultBase):
+    pass
+
+
+class SpiderResult(SpiderResultBase):
+    id: int
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
-class CheckInRecordResponse(BaseModel):
-    id: int
-    registration_id: int
-    device_id: Optional[int]
-    event_id: int
-    entrance: str
-    check_in_time: datetime
-    
-    class Config:
-        from_attributes = True
 
-class CheckInStatistics(BaseModel):
-    event_id: int
-    event_title: str
-    total_checkins: int
-    entrance_counts: Dict[str, int]
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str
-    user: UserResponse
-
-class EventStatistics(BaseModel):
-    event_id: int
-    event_title: str
-    event_location: str
-    event_start_time: datetime
-    event_end_time: datetime
-    max_capacity: int
-    total_registrations: int
-    confirmed_registrations: int
-    waitlisted_registrations: int
-    cancelled_registrations: int
-    pending_confirmation_registrations: int
-    total_checkins: int
-    checkin_rate: float
-    registration_rate: float
-    entrance_counts: Dict[str, int]
-    checkin_timeline: List[Dict[str, Any]]
-    status_distribution: Dict[str, int]
-    registration_timeline: List[Dict[str, Any]]
-    checkin_hourly_distribution: List[Dict[str, Any]]
-    form_field_stats: List[Dict[str, Any]]
-    no_show_count: int
-    no_show_rate: float
-
-class ExportSummary(BaseModel):
-    event_id: int
-    event_title: str
-    exported_at: datetime
-    registrations_count: int
-    checkins_count: int
+class ExecuteRequest(BaseModel):
+    task_id: Optional[int] = None
+    script_id: Optional[int] = None
+    scrape_rules: Optional[ScrapeRules] = None

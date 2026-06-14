@@ -1,0 +1,19 @@
+{
+  "name": "示例网站抓取任务",
+  "description": "抓取示例网站的标题信息",
+  "script_id": 1,
+  "cron_expression": "0 * * * *",
+  "is_enabled": false,
+  "scrape_rules": {
+    "start_urls": ["http://example.com", "http://example.org"],
+    "allowed_domains": ["example.com", "example.org"],
+    "follow_links": false,
+    "max_pages": 10,
+    "delay": 1.0,
+    "user_agent": "SpiderPlatform/1.0",
+    "custom_headers": {
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "extract_patterns": {}
+  }
+}

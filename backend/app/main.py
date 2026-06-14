@@ -1,18 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine, Base
-from .api.users import router as users_router
-from .api.events import router as events_router
-from .api.registrations import router as registrations_router
-from .api.devices import router as devices_router
-from .api.reports import router as reports_router
-from .scheduler import start_scheduler
+from contextlib import asynccontextmanager
 
-Base.metadata.create_all(bind=engine)
+from .config import settings
+from .database import init_db
+from .services.scheduler import scheduler
+from .routers import scripts, tasks, execute, results
 
-app = FastAPI(title="Event Management System", version="1.0.0")
 
-scheduler = start_scheduler()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    await scheduler.start()
+    yield
+    await scheduler.shutdown()
+
+
+app = FastAPI(
+    title=settings.app_name,
+    description="爬虫任务管理平台 - 支持Python爬虫脚本编写、定时调度和结果导出",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,15 +29,24 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Suggested-Filename", "content-disposition", "x-suggested-filename"],
 )
 
-app.include_router(users_router)
-app.include_router(events_router)
-app.include_router(registrations_router)
-app.include_router(devices_router)
-app.include_router(reports_router)
+app.include_router(scripts.router)
+app.include_router(tasks.router)
+app.include_router(execute.router)
+app.include_router(results.router)
 
-@app.get("/")
-def root():
-    return {"message": "Welcome to Event Management System"}
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok", "app": settings.app_name}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=True
+    )

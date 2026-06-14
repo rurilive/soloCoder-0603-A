@@ -1,83 +1,65 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
+
 from .database import Base
 
-class User(Base):
-    __tablename__ = "users"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    is_organizer = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    events = relationship("Event", back_populates="organizer")
-    registrations = relationship("Registration", back_populates="user")
 
-class Event(Base):
-    __tablename__ = "events"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True, nullable=False)
-    description = Column(String)
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime, nullable=False)
-    location = Column(String, nullable=False)
-    max_capacity = Column(Integer, nullable=False)
-    registration_form = Column(JSON)
-    status = Column(String, default="pending")
-    organizer_id = Column(Integer, ForeignKey("users.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-    
-    organizer = relationship("User", back_populates="events")
-    registrations = relationship("Registration", back_populates="event")
+class SpiderScript(Base):
+    __tablename__ = "spider_scripts"
 
-class Registration(Base):
-    __tablename__ = "registrations"
-    
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    event_id = Column(Integer, ForeignKey("events.id"))
-    ticket_code = Column(String, unique=True, index=True)
-    check_in = Column(Boolean, default=False)
-    check_in_time = Column(DateTime)
-    form_data = Column(JSON)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    code = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    status = Column(String, default="confirmed")
-    waitlist_position = Column(Integer, default=None)
-    waitlist_offer_sent_at = Column(DateTime)
-    waitlist_offer_token = Column(String, unique=True, index=True)
-    waitlist_confirmed_at = Column(DateTime)
-    
-    user = relationship("User", back_populates="registrations")
-    event = relationship("Event", back_populates="registrations")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class Device(Base):
-    __tablename__ = "devices"
-    
+    tasks = relationship("SpiderTask", back_populates="script", cascade="all, delete-orphan")
+
+
+class SpiderTask(Base):
+    __tablename__ = "spider_tasks"
+
     id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=False)
-    entrance = Column(String, nullable=False)
-    event_id = Column(Integer, ForeignKey("events.id"))
-    is_active = Column(Boolean, default=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    script_id = Column(Integer, ForeignKey("spider_scripts.id"), nullable=False)
+    cron_expression = Column(String(100), default="")
+    is_enabled = Column(Boolean, default=True)
+    scrape_rules = Column(JSON, default=dict)
+    timeout = Column(Integer, default=60)
+    max_retries = Column(Integer, default=3)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    event = relationship("Event")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class CheckInRecord(Base):
-    __tablename__ = "check_in_records"
-    
+    script = relationship("SpiderScript", back_populates="tasks")
+    jobs = relationship("SpiderJob", back_populates="task", cascade="all, delete-orphan")
+
+
+class SpiderJob(Base):
+    __tablename__ = "spider_jobs"
+
     id = Column(Integer, primary_key=True, index=True)
-    registration_id = Column(Integer, ForeignKey("registrations.id"))
-    device_id = Column(Integer, ForeignKey("devices.id"))
-    event_id = Column(Integer, ForeignKey("events.id"))
-    entrance = Column(String, nullable=False)
-    check_in_time = Column(DateTime, default=datetime.utcnow)
-    
-    registration = relationship("Registration")
-    device = relationship("Device")
-    event = relationship("Event")
+    task_id = Column(Integer, ForeignKey("spider_tasks.id"), nullable=False)
+    status = Column(String(50), default="pending")
+    started_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime, nullable=True)
+    duration = Column(Integer, default=0)
+    items_scraped = Column(Integer, default=0)
+    error_message = Column(Text, default="")
+
+    task = relationship("SpiderTask", back_populates="jobs")
+    results = relationship("SpiderResult", back_populates="job", cascade="all, delete-orphan")
+
+
+class SpiderResult(Base):
+    __tablename__ = "spider_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("spider_jobs.id"), nullable=False)
+    url = Column(String(2048), default="")
+    data = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    job = relationship("SpiderJob", back_populates="results")
