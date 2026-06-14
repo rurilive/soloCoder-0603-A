@@ -3,6 +3,7 @@ import json
 import sys
 import traceback
 import uuid
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -26,54 +27,59 @@ class DebugCommand:
 
 
 class SpiderDebugger(bdb.Bdb):
-    def __init__(self, session_id: str, breakpoints: List[int] = None):
+    def __init__(self, session_id: str, preamble_line_count: int = 0):
         bdb.Bdb.__init__(self)
         self.session_id = session_id
-        self.breakpoints_list = breakpoints or []
+        self.preamble_line_count = preamble_line_count
+        self.breakpoints_list: List[int] = []
         self.current_line = 0
+        self.user_current_line = 0
         self.output: List[str] = []
         self.variables: Dict[str, Any] = {}
-        self.waiting = asyncio.Event()
-        self.step_mode = False
+        self._wait_event = threading.Event()
         self.finished = False
         self.error: Optional[str] = None
         self.user_code_globals: Dict[str, Any] = {}
         self.user_code_locals: Dict[str, Any] = {}
         self.command = None
         self._current_frame = None
+        self._filename = "<string>"
+        self._lock = threading.Lock()
 
     def set_breakpoints(self, breakpoints: List[int]):
         self.clear_all_breaks()
+        self.breakpoints_list = list(breakpoints)
         for line in breakpoints:
-            self.breakpoints_list.append(line)
+            real_line = line + self.preamble_line_count
+            try:
+                self.set_break(self._filename, real_line)
+            except Exception:
+                pass
 
     def user_call(self, frame, argument_list):
         filename = frame.f_code.co_filename
-        if filename.startswith("<string>") or "user_script" in filename:
+        if filename == self._filename:
             self._capture_state(frame)
 
     def user_line(self, frame):
         filename = frame.f_code.co_filename
-        if filename.startswith("<string>") or "user_script" in filename:
-            self.current_line = frame.f_lineno
-            self._capture_state(frame)
-            self._current_frame = frame
+        if filename != self._filename:
+            return
 
-            should_break = (
-                self.step_mode
-                or self.current_line in self.breakpoints_list
-            )
+        self.current_line = frame.f_lineno
+        self.user_current_line = self.current_line - self.preamble_line_count
+        self._capture_state(frame)
+        self._current_frame = frame
 
-            if should_break and not self.finished:
-                self.waiting.clear()
-                loop = asyncio.new_event_loop()
-                try:
-                    loop.run_until_complete(self.wait_for_command())
-                finally:
-                    loop.close()
+        if self.user_current_line < 1:
+            return
 
-            if self.command == DebugCommand.STOP:
-                raise bdb.BdbQuit
+        self._wait_event.clear()
+        self._wait_event.wait()
+
+        if self.command == DebugCommand.STOP:
+            self.finished = True
+            raise bdb.BdbQuit
 
     def user_return(self, frame, return_value):
         pass
@@ -85,35 +91,49 @@ class SpiderDebugger(bdb.Bdb):
         self.output.append(traceback.format_exc())
 
     def _capture_state(self, frame):
-        self.user_code_locals = frame.f_locals.copy()
-        self.user_code_globals = frame.f_globals.copy()
+        with self._lock:
+            self.user_code_locals = frame.f_locals.copy()
+            self.user_code_globals = frame.f_globals.copy()
 
-        public_vars = {}
-        for key, value in self.user_code_locals.items():
-            if not key.startswith("_"):
-                try:
-                    repr_val = repr(value)
-                    if len(repr_val) > 1000:
-                        repr_val = repr_val[:1000] + "..."
-                    public_vars[key] = repr_val
-                except Exception:
-                    public_vars[key] = "<unserializable>"
+            public_vars = {}
+            for key, value in self.user_code_locals.items():
+                if not key.startswith("_") and key not in ("save_item", "log", "fetch_page", "auto_crawl", "rules"):
+                    try:
+                        repr_val = repr(value)
+                        if len(repr_val) > 1000:
+                            repr_val = repr_val[:1000] + "..."
+                        public_vars[key] = repr_val
+                    except Exception:
+                        public_vars[key] = "<unserializable>"
 
-        self.variables = public_vars
-
-    async def wait_for_command(self):
-        await self.waiting.wait()
-        self.waiting.clear()
+            self.variables = public_vars
 
     def resume(self, command: str):
         self.command = command
-        if command in [DebugCommand.STEP, DebugCommand.NEXT]:
-            self.step_mode = True
+        if command == DebugCommand.STEP:
+            self.set_step()
+        elif command == DebugCommand.NEXT:
+            if self._current_frame:
+                self.set_next(self._current_frame)
+            else:
+                self.set_step()
         elif command == DebugCommand.CONTINUE:
-            self.step_mode = False
+            self.set_continue()
         elif command == DebugCommand.STOP:
             self.finished = True
-        self.waiting.set()
+            self.set_continue()
+        self._wait_event.set()
+
+    def get_snapshot(self) -> Dict[str, Any]:
+        with self._lock:
+            return {
+                "current_line": self.user_current_line,
+                "breakpoints": list(self.breakpoints_list),
+                "variables": dict(self.variables),
+                "output": list(self.output),
+                "error": self.error,
+                "finished": self.finished,
+            }
 
     def trace_dispatch(self, frame, event, arg):
         if self.finished:
@@ -122,9 +142,11 @@ class SpiderDebugger(bdb.Bdb):
 
 
 class DebugService:
+    _active_sessions: Dict[str, SpiderDebugger] = {}
+    _threads: Dict[str, threading.Thread] = {}
+
     def __init__(self, db: AsyncSession):
         self.db = db
-        self._active_sessions: Dict[str, SpiderDebugger] = {}
 
     async def create_session(
         self,
@@ -160,35 +182,10 @@ class DebugService:
         )
         return result.scalar_one_or_none()
 
-    async def start_debugging(self, session_id: str) -> DebugSessionState:
-        session = await self.get_session(session_id)
-        if not session:
-            raise ValueError(f"Session {session_id} not found")
+    def _build_preamble(self, rules: ScrapeRules) -> str:
+        rules_json = json.dumps(rules.model_dump())
 
-        rules = ScrapeRules(**session.scrape_rules) if session.scrape_rules else ScrapeRules()
-
-        debugger = SpiderDebugger(session_id)
-        self._active_sessions[session_id] = debugger
-
-        session.status = "running"
-        await self.db.commit()
-
-        asyncio.create_task(self._run_debugger(session_id, session.code, rules, debugger))
-
-        return await self.get_state(session_id)
-
-    async def _run_debugger(
-        self,
-        session_id: str,
-        code: str,
-        rules: ScrapeRules,
-        debugger: SpiderDebugger,
-    ):
-        try:
-            rules_json = json.dumps(rules.model_dump())
-
-            preamble = f'''
-import json
+        preamble = f'''import json
 import sys
 from collections import deque
 from pathlib import Path
@@ -352,18 +349,54 @@ def auto_crawl():
 
     log(f"爬取完成，共抓取 {{_pages_scraped}} 个页面，提取 {{len(results)}} 条结果")
 '''
+        return preamble
 
-            full_code = preamble + "\n" + code
+    def _count_preamble_lines(self, preamble: str) -> int:
+        lines = preamble.split("\n")
+        return len(lines)
 
-            import io
-            import contextlib
+    async def start_debugging(self, session_id: str) -> DebugSessionState:
+        session = await self.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
 
-            output_capture = io.StringIO()
+        rules = ScrapeRules(**session.scrape_rules) if session.scrape_rules else ScrapeRules()
 
+        preamble = self._build_preamble(rules)
+        preamble_line_count = self._count_preamble_lines(preamble)
+
+        debugger = SpiderDebugger(session_id, preamble_line_count=preamble_line_count)
+        self._active_sessions[session_id] = debugger
+
+        session.status = "running"
+        await self.db.commit()
+
+        full_code = preamble + "\n" + session.code
+        debugger.set_step()
+
+        thread = threading.Thread(
+            target=self._run_debugger_sync,
+            args=(session_id, full_code, debugger),
+            daemon=True,
+        )
+        self._threads[session_id] = thread
+        thread.start()
+
+        await asyncio.sleep(0.3)
+        return await self.get_state(session_id)
+
+    def _run_debugger_sync(self, session_id: str, full_code: str, debugger: SpiderDebugger):
+        import io
+        import contextlib
+
+        output_capture = io.StringIO()
+
+        try:
             with contextlib.redirect_stdout(output_capture):
                 try:
                     code_obj = compile(full_code, "<string>", "exec")
-                    debugger.run(code_obj)
+                    globals_dict = {"__name__": "__main__"}
+                    debugger.run(code_obj, globals_dict)
                 except bdb.BdbQuit:
                     debugger.output.append("Debug session stopped by user")
                 except Exception as e:
@@ -385,24 +418,13 @@ def auto_crawl():
             debugger.output.append(traceback.format_exc())
             debugger.finished = True
 
-        finally:
-            await self._update_session_state(session_id, debugger)
-
-            if session_id in self._active_sessions:
-                del self._active_sessions[session_id]
-
-            session = await self.get_session(session_id)
-            if session:
-                session.status = "finished" if not debugger.error else "error"
-                await self.db.commit()
-
     async def execute_command(
         self, session_id: str, command: str, breakpoints: List[int] = None
     ) -> DebugSessionState:
         debugger = self._active_sessions.get(session_id)
         if not debugger:
             session = await self.get_session(session_id)
-            if session and session.status in ["idle", "finished", "error"]:
+            if session and session.status in ["idle", "finished", "error", "stopped"]:
                 return await self.get_state(session_id)
             raise ValueError(f"No active debug session for {session_id}")
 
@@ -411,7 +433,7 @@ def auto_crawl():
 
         debugger.resume(command)
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
 
         return await self.get_state(session_id)
 
@@ -422,8 +444,14 @@ def auto_crawl():
 
         debugger = self._active_sessions.get(session_id)
         if debugger:
-            await self._update_session_state(session_id, debugger)
-            session = await self.get_session(session_id)
+            snapshot = debugger.get_snapshot()
+            session.current_line = snapshot["current_line"]
+            session.breakpoints = snapshot["breakpoints"]
+            session.variables = snapshot["variables"]
+            session.output = snapshot["output"][-200:] if len(snapshot["output"]) > 200 else snapshot["output"]
+            if snapshot["finished"]:
+                session.status = "finished" if not snapshot["error"] else "error"
+            await self.db.commit()
 
         return DebugSessionState(
             session_id=session_id,
@@ -435,21 +463,6 @@ def auto_crawl():
             error=debugger.error if debugger else None,
         )
 
-    async def _update_session_state(self, session_id: str, debugger: SpiderDebugger):
-        session = await self.get_session(session_id)
-        if not session:
-            return
-
-        session.current_line = debugger.current_line
-        session.breakpoints = debugger.breakpoints_list
-        session.variables = debugger.variables
-        session.output = debugger.output[-200:] if len(debugger.output) > 200 else debugger.output
-
-        if debugger.finished:
-            session.status = "finished" if not debugger.error else "error"
-
-        await self.db.commit()
-
     async def stop_session(self, session_id: str):
         debugger = self._active_sessions.get(session_id)
         if debugger:
@@ -459,6 +472,10 @@ def auto_crawl():
         if session:
             session.status = "stopped"
             await self.db.commit()
+
+        if session_id in self._threads:
+            self._threads[session_id].join(timeout=2)
+            del self._threads[session_id]
 
         if session_id in self._active_sessions:
             del self._active_sessions[session_id]

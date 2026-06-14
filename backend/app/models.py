@@ -25,6 +25,7 @@ class SpiderTask(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, default="")
     script_id = Column(Integer, ForeignKey("spider_scripts.id"), nullable=False)
+    cleaning_pipeline_id = Column(Integer, ForeignKey("cleaning_pipelines.id"), nullable=True)
     cron_expression = Column(String(100), default="")
     is_enabled = Column(Boolean, default=True)
     scrape_rules = Column(JSON, default=dict)
@@ -34,6 +35,7 @@ class SpiderTask(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     script = relationship("SpiderScript", back_populates="tasks")
+    cleaning_pipeline = relationship("CleaningPipeline", back_populates="tasks")
     jobs = relationship("SpiderJob", back_populates="task", cascade="all, delete-orphan")
 
 
@@ -101,3 +103,36 @@ class DebugSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     script = relationship("SpiderScript")
+
+
+class CleaningPipeline(Base):
+    __tablename__ = "cleaning_pipelines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    rules = relationship(
+        "CleaningRule",
+        back_populates="pipeline",
+        cascade="all, delete-orphan",
+        order_by="CleaningRule.order_index"
+    )
+    tasks = relationship("SpiderTask", back_populates="cleaning_pipeline")
+
+
+class CleaningRule(Base):
+    __tablename__ = "cleaning_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pipeline_id = Column(Integer, ForeignKey("cleaning_pipelines.id"), nullable=False)
+    rule_type = Column(String(50), nullable=False)
+    field_name = Column(String(255), default="")
+    params = Column(JSON, default=dict)
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    pipeline = relationship("CleaningPipeline", back_populates="rules")

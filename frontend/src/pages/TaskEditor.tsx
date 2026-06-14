@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { taskApi, scriptApi } from '../services/api';
-import type { SpiderScript, ScrapeRules } from '../types';
+import { taskApi, scriptApi, cleaningApi } from '../services/api';
+import type { SpiderScript, ScrapeRules, CleaningPipeline } from '../types';
 
 const defaultRules: ScrapeRules = {
   start_urls: ['https://example.com'],
@@ -22,12 +22,14 @@ export default function TaskEditor() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scriptId, setScriptId] = useState<number | ''>('');
+  const [cleaningPipelineId, setCleaningPipelineId] = useState<number | ''>('');
   const [cronExpression, setCronExpression] = useState('');
   const [isEnabled, setIsEnabled] = useState(true);
   const [timeout, setTimeout] = useState(60);
   const [maxRetries, setMaxRetries] = useState(3);
   const [scrapeRules, setScrapeRules] = useState<ScrapeRules>(defaultRules);
   const [scripts, setScripts] = useState<SpiderScript[]>([]);
+  const [cleaningPipelines, setCleaningPipelines] = useState<CleaningPipeline[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [startUrl, setStartUrl] = useState('');
@@ -38,6 +40,7 @@ export default function TaskEditor() {
 
   useEffect(() => {
     loadScripts();
+    loadCleaningPipelines();
     if (isEditing) {
       loadTask();
     }
@@ -52,6 +55,15 @@ export default function TaskEditor() {
     }
   };
 
+  const loadCleaningPipelines = async () => {
+    try {
+      const res = await cleaningApi.listPipelines();
+      setCleaningPipelines(res.data);
+    } catch (error) {
+      console.error('Failed to load cleaning pipelines:', error);
+    }
+  };
+
   const loadTask = async () => {
     if (!id) return;
     setLoading(true);
@@ -61,6 +73,7 @@ export default function TaskEditor() {
       setName(task.name);
       setDescription(task.description);
       setScriptId(task.script_id);
+      setCleaningPipelineId(task.cleaning_pipeline_id ?? '');
       setCronExpression(task.cron_expression);
       setIsEnabled(task.is_enabled);
       setTimeout(task.timeout);
@@ -90,6 +103,7 @@ export default function TaskEditor() {
         name,
         description,
         script_id: Number(scriptId),
+        cleaning_pipeline_id: cleaningPipelineId ? Number(cleaningPipelineId) : null,
         cron_expression: cronExpression,
         is_enabled: isEnabled,
         scrape_rules: scrapeRules,
@@ -214,6 +228,33 @@ export default function TaskEditor() {
               {scripts.length === 0 && (
                 <div className="form-hint">
                   暂无脚本，请先<a href="/scripts/new" target="_blank">创建脚本</a>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">
+                清洗管道
+                <span style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 'normal', marginLeft: '8px' }}>
+                  （可选，对抓取结果进行清洗）
+                </span>
+              </label>
+              <select
+                className="form-select"
+                value={cleaningPipelineId}
+                onChange={(e) => setCleaningPipelineId(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">不使用清洗管道</option>
+                {cleaningPipelines.map((pipeline) => (
+                  <option key={pipeline.id} value={pipeline.id}>
+                    {pipeline.name} ({pipeline.rules?.length || 0} 条规则)
+                  </option>
+                ))}
+              </select>
+              {cleaningPipelines.length > 0 && (
+                <div className="form-hint">
+                  <a href="/cleaning" target="_blank">管理清洗管道</a>
                 </div>
               )}
             </div>

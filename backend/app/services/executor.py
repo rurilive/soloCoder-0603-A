@@ -10,10 +10,12 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from ..config import settings
-from ..models import SpiderJob, SpiderResult, SpiderTask, SpiderScript
+from ..models import SpiderJob, SpiderResult, SpiderTask, SpiderScript, CleaningPipeline
 from ..schemas import ScrapeRules
+from .cleaning_engine import CleaningEngine
 
 
 class SpiderContext:
@@ -151,7 +153,17 @@ class SpiderExecutor:
 
             items_scraped = len(execution_result.get("results", []))
 
-            for item in execution_result.get("results", []):
+            cleaned_results = execution_result.get("results", [])
+            if task_id and task_id > 0:
+                cleaning_rules = await self._get_cleaning_rules(task_id)
+                if cleaning_rules:
+                    engine = CleaningEngine(cleaning_rules)
+                    raw_items = [item.get("data", {}) for item in cleaned_results]
+                    cleaned_items = engine.clean_items(raw_items)
+                    for i, item in enumerate(cleaned_results):
+                        item["data"] = cleaned_items[i]
+
+            for item in cleaned_results:
                 result_record = SpiderResult(
                     job_id=job.id,
                     url=item.get("url", ""),
@@ -388,3 +400,31 @@ with open(output_path, "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
 ''' % (rules_json, indented_user_code)
         return wrapper
+
+    async def _get_cleaning_rules(self, task_id: int) -> Optional[List[Dict[str, Any]]]:
+        result = await self.db.execute(
+            select(SpiderTask)
+            .where(SpiderTask.id == task_id)
+        )
+        task = result.scalar_one_or_none()
+        if not task or not task.cleaning_pipeline_id:
+            return None
+
+        result = await self.db.execute(
+            select(CleaningPipeline)
+            .options(joinedload(CleaningPipeline.rules))
+            .where(CleaningPipeline.id == task.cleaning_pipeline_id)
+        )
+        pipeline = result.scalars().unique().one_or_none()
+        if not pipeline:
+            return None
+
+        rules = []
+        for rule in pipeline.rules:
+            rules.append({
+                "rule_type": rule.rule_type,
+                "field_name": rule.field_name,
+                "params": rule.params,
+                "order_index": rule.order_index,
+            })
+        return rules if rules else None

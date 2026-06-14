@@ -43,6 +43,7 @@ class SpiderTaskBase(BaseModel):
     name: str
     description: str = ""
     script_id: int
+    cleaning_pipeline_id: Optional[int] = None
     cron_expression: str = ""
     is_enabled: bool = True
     scrape_rules: ScrapeRules = Field(default_factory=ScrapeRules)
@@ -58,6 +59,7 @@ class SpiderTaskUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     script_id: Optional[int] = None
+    cleaning_pipeline_id: Optional[int] = None
     cron_expression: Optional[str] = None
     is_enabled: Optional[bool] = None
     scrape_rules: Optional[ScrapeRules] = None
@@ -217,7 +219,6 @@ class DebugSessionCreate(DebugSessionBase):
 
 
 class DebugCommand(BaseModel):
-    session_id: str
     command: str
     breakpoints: List[int] = Field(default_factory=list)
 
@@ -252,3 +253,75 @@ class SelectorTestRequest(BaseModel):
     selector: str
     attribute: str = "text"
     headers: Dict[str, str] = Field(default_factory=dict)
+
+
+class CleaningRuleBase(BaseModel):
+    rule_type: str
+    field_name: str = ""
+    params: Dict[str, Any] = Field(default_factory=dict)
+    order_index: int = 0
+
+
+class CleaningRuleCreate(CleaningRuleBase):
+    pass
+
+
+class CleaningRuleUpdate(BaseModel):
+    rule_type: Optional[str] = None
+    field_name: Optional[str] = None
+    params: Optional[Dict[str, Any]] = None
+    order_index: Optional[int] = None
+
+
+class CleaningRule(CleaningRuleBase):
+    id: int
+    pipeline_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CleaningPipelineBase(BaseModel):
+    name: str
+    description: str = ""
+
+
+class CleaningPipelineCreate(CleaningPipelineBase):
+    rules: List[CleaningRuleCreate] = Field(default_factory=list)
+
+
+class CleaningPipelineUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    rules: Optional[List[CleaningRuleCreate]] = None
+
+
+class CleaningPipeline(CleaningPipelineBase):
+    id: int
+    rules: List[CleaningRule] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CleaningPreviewRequest(BaseModel):
+    rules: List[CleaningRuleCreate]
+    sample_data: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class CleaningPreviewResponse(BaseModel):
+    original: List[Dict[str, Any]]
+    cleaned: List[Dict[str, Any]]
+    rule_count: int
+
+
+class RuleTypeInfo(BaseModel):
+    type: str
+    label: str
+    category: str
+    has_field: bool
+    params: List[Dict[str, Any]]

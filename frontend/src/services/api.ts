@@ -22,6 +22,12 @@ import type {
   DebugSessionCreate,
   DebugCommandRequest,
   DebugSessionState,
+  CleaningPipeline,
+  CleaningPipelineCreate,
+  CleaningPipelineUpdate,
+  CleaningRule,
+  RuleTypeInfo,
+  CleaningPreviewResponse,
 } from '../types';
 
 const api = axios.create({
@@ -91,6 +97,21 @@ export const debugApi = {
     api.post<DebugSessionState>(`/debug/sessions/${sessionId}/command`, command),
   getState: (sessionId: string) => api.get<DebugSessionState>(`/debug/sessions/${sessionId}/state`),
   stopSession: (sessionId: string) => api.post(`/debug/sessions/${sessionId}/stop`),
+};
+
+export const cleaningApi = {
+  listRuleTypes: () => api.get<RuleTypeInfo[]>('/cleaning/rule-types'),
+  listPipelines: () => api.get<CleaningPipeline[]>('/cleaning/pipelines'),
+  getPipeline: (id: number) => api.get<CleaningPipeline>(`/cleaning/pipelines/${id}`),
+  createPipeline: (data: CleaningPipelineCreate) =>
+    api.post<CleaningPipeline>('/cleaning/pipelines', data),
+  updatePipeline: (id: number, data: CleaningPipelineUpdate) =>
+    api.put<CleaningPipeline>(`/cleaning/pipelines/${id}`, data),
+  deletePipeline: (id: number) => api.delete(`/cleaning/pipelines/${id}`),
+  preview: (rules: any[], sampleData: Record<string, any>[]) =>
+    api.post<CleaningPreviewResponse>('/cleaning/preview', { rules, sample_data: sampleData }),
+  previewPipeline: (id: number, sampleData: Record<string, any>[]) =>
+    api.post<CleaningPreviewResponse>(`/cleaning/pipelines/${id}/preview`, sampleData),
 };
 
 export default api;

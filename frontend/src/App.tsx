@@ -9,6 +9,8 @@ import Results from './pages/Results';
 import VisualConfigList from './pages/VisualConfigList';
 import VisualConfigEditor from './pages/VisualConfigEditor';
 import Debugger from './pages/Debugger';
+import CleaningPipelineList from './pages/CleaningPipelineList';
+import CleaningPipelineEditor from './pages/CleaningPipelineEditor';
 
 function App() {
   return (
@@ -27,6 +29,9 @@ function App() {
         <Route path="/tasks/new" element={<TaskEditor />} />
         <Route path="/tasks/:id" element={<TaskEditor />} />
         <Route path="/results" element={<Results />} />
+        <Route path="/cleaning" element={<CleaningPipelineList />} />
+        <Route path="/cleaning/new" element={<CleaningPipelineEditor />} />
+        <Route path="/cleaning/:id" element={<CleaningPipelineEditor />} />
       </Routes>
     </Layout>
   );

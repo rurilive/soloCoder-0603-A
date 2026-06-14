@@ -35,6 +35,7 @@ export interface SpiderTask {
   name: string;
   description: string;
   script_id: number;
+  cleaning_pipeline_id?: number;
   cron_expression: string;
   is_enabled: boolean;
   scrape_rules: ScrapeRules;
@@ -50,6 +51,7 @@ export interface SpiderTaskCreate {
   name: string;
   description?: string;
   script_id: number;
+  cleaning_pipeline_id?: number;
   cron_expression?: string;
   is_enabled?: boolean;
   scrape_rules: ScrapeRules;
@@ -61,6 +63,7 @@ export interface SpiderTaskUpdate {
   name?: string;
   description?: string;
   script_id?: number;
+  cleaning_pipeline_id?: number;
   cron_expression?: string;
   is_enabled?: boolean;
   scrape_rules?: ScrapeRules;
@@ -259,4 +262,66 @@ export interface Stats {
     total: number;
     enabled: number;
   };
+}
+
+export interface CleaningRule {
+  id: number;
+  pipeline_id: number;
+  rule_type: string;
+  field_name: string;
+  params: Record<string, any>;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CleaningRuleCreate {
+  rule_type: string;
+  field_name?: string;
+  params?: Record<string, any>;
+  order_index?: number;
+}
+
+export interface CleaningPipeline {
+  id: number;
+  name: string;
+  description: string;
+  rules: CleaningRule[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CleaningPipelineCreate {
+  name: string;
+  description?: string;
+  rules?: CleaningRuleCreate[];
+}
+
+export interface CleaningPipelineUpdate {
+  name?: string;
+  description?: string;
+  rules?: CleaningRuleCreate[];
+}
+
+export interface RuleTypeParam {
+  name: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  default?: any;
+  options?: string[];
+}
+
+export interface RuleTypeInfo {
+  type: string;
+  label: string;
+  category: string;
+  has_field: boolean;
+  params: RuleTypeParam[];
+}
+
+export interface CleaningPreviewResponse {
+  original: Record<string, any>[];
+  cleaned: Record<string, any>[];
+  rule_count: number;
 }
