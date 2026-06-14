@@ -31,12 +31,57 @@ class SpiderTask(Base):
     scrape_rules = Column(JSON, default=dict)
     timeout = Column(Integer, default=60)
     max_retries = Column(Integer, default=3)
+    proxy_enabled = Column(Boolean, default=False)
+    proxy_tags = Column(JSON, default=list)
+    proxy_rotation_strategy = Column(String(50), default="random")
+    rate_limit_enabled = Column(Boolean, default=True)
+    rate_limit_per_minute = Column(Integer, default=60)
+    delay_min = Column(Float, default=0.5)
+    delay_max = Column(Float, default=2.0)
+    retry_on_proxy_fail = Column(Integer, default=3)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     script = relationship("SpiderScript", back_populates="tasks")
     cleaning_pipeline = relationship("CleaningPipeline", back_populates="tasks")
     jobs = relationship("SpiderJob", back_populates="task", cascade="all, delete-orphan")
+
+
+class Proxy(Base):
+    __tablename__ = "proxies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip = Column(String(64), nullable=False)
+    port = Column(Integer, nullable=False)
+    protocol = Column(String(20), default="http")
+    username = Column(String(255), nullable=True)
+    password = Column(String(255), nullable=True)
+    status = Column(String(20), default="inactive")
+    success_count = Column(Integer, default=0)
+    fail_count = Column(Integer, default=0)
+    last_check_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    response_time = Column(Integer, default=0)
+    tags = Column(JSON, default=list)
+    remark = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    check_logs = relationship("ProxyCheckLog", back_populates="proxy", cascade="all, delete-orphan")
+
+
+class ProxyCheckLog(Base):
+    __tablename__ = "proxy_check_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proxy_id = Column(Integer, ForeignKey("proxies.id"), nullable=False)
+    success = Column(Boolean, nullable=False)
+    response_time = Column(Integer, default=0)
+    status_code = Column(Integer, nullable=True)
+    error_message = Column(Text, default="")
+    checked_at = Column(DateTime, default=datetime.utcnow)
+
+    proxy = relationship("Proxy", back_populates="check_logs")
 
 
 class SpiderJob(Base):

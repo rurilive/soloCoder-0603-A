@@ -11,6 +11,7 @@ const navItems = [
   { path: '/scripts', label: '脚本管理', icon: '📝' },
   { path: '/debug', label: '脚本调试', icon: '🐛' },
   { path: '/cleaning', label: '数据清洗', icon: '🧹' },
+  { path: '/proxies', label: '代理池', icon: '🌐' },
   { path: '/tasks', label: '任务管理', icon: '⏰' },
   { path: '/results', label: '执行结果', icon: '📋' },
 ];

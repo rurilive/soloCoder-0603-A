@@ -11,6 +11,7 @@ import VisualConfigEditor from './pages/VisualConfigEditor';
 import Debugger from './pages/Debugger';
 import CleaningPipelineList from './pages/CleaningPipelineList';
 import CleaningPipelineEditor from './pages/CleaningPipelineEditor';
+import ProxyPool from './pages/ProxyPool';
 
 function App() {
   return (
@@ -32,6 +33,7 @@ function App() {
         <Route path="/cleaning" element={<CleaningPipelineList />} />
         <Route path="/cleaning/new" element={<CleaningPipelineEditor />} />
         <Route path="/cleaning/:id" element={<CleaningPipelineEditor />} />
+        <Route path="/proxies" element={<ProxyPool />} />
       </Routes>
     </Layout>
   );

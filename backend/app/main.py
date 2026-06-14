@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from .config import settings
 from .database import init_db
 from .services.scheduler import scheduler
-from .routers import scripts, tasks, execute, results, visual_config, debug, cleaning
+from .routers import scripts, tasks, execute, results, visual_config, debug, cleaning, proxies
 
 
 @asynccontextmanager
@@ -38,6 +38,7 @@ app.include_router(results.router)
 app.include_router(visual_config.router)
 app.include_router(debug.router)
 app.include_router(cleaning.router)
+app.include_router(proxies.router)
 
 
 @app.get("/api/health")

@@ -37,6 +37,15 @@ export default function TaskEditor() {
   const [headerValue, setHeaderValue] = useState('');
   const [patternKey, setPatternKey] = useState('');
   const [patternValue, setPatternValue] = useState('');
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [proxyTags, setProxyTags] = useState<string[]>([]);
+  const [proxyTagInput, setProxyTagInput] = useState('');
+  const [proxyRotationStrategy, setProxyRotationStrategy] = useState('random');
+  const [rateLimitEnabled, setRateLimitEnabled] = useState(true);
+  const [rateLimitPerMinute, setRateLimitPerMinute] = useState(60);
+  const [delayMin, setDelayMin] = useState(0.5);
+  const [delayMax, setDelayMax] = useState(2.0);
+  const [retryOnProxyFail, setRetryOnProxyFail] = useState(3);
 
   useEffect(() => {
     loadScripts();
@@ -79,6 +88,14 @@ export default function TaskEditor() {
       setTimeout(task.timeout);
       setMaxRetries(task.max_retries);
       setScrapeRules(task.scrape_rules);
+      setProxyEnabled((task as any).proxy_enabled ?? false);
+      setProxyTags((task as any).proxy_tags ?? []);
+      setProxyRotationStrategy((task as any).proxy_rotation_strategy ?? 'random');
+      setRateLimitEnabled((task as any).rate_limit_enabled ?? true);
+      setRateLimitPerMinute((task as any).rate_limit_per_minute ?? 60);
+      setDelayMin((task as any).delay_min ?? 0.5);
+      setDelayMax((task as any).delay_max ?? 2.0);
+      setRetryOnProxyFail((task as any).retry_on_proxy_fail ?? 3);
     } catch (error) {
       console.error('Failed to load task:', error);
       alert('加载任务失败');
@@ -109,6 +126,14 @@ export default function TaskEditor() {
         scrape_rules: scrapeRules,
         timeout,
         max_retries: maxRetries,
+        proxy_enabled: proxyEnabled,
+        proxy_tags: proxyTags,
+        proxy_rotation_strategy: proxyRotationStrategy,
+        rate_limit_enabled: rateLimitEnabled,
+        rate_limit_per_minute: rateLimitPerMinute,
+        delay_min: delayMin,
+        delay_max: delayMax,
+        retry_on_proxy_fail: retryOnProxyFail,
       };
 
       if (isEditing) {
@@ -495,6 +520,182 @@ export default function TaskEditor() {
                 ))
               )}
             </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3 className="card-title" style={{ marginBottom: '20px' }}>代理与频率限制</h3>
+
+          <div className="form-group">
+            <label className="form-label">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                启用代理池
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={proxyEnabled}
+                    onChange={(e) => setProxyEnabled(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </span>
+            </label>
+            <div className="form-hint">启用后，爬虫请求将通过代理池中的代理IP发送，降低被封禁风险</div>
+          </div>
+
+          {proxyEnabled && (
+            <>
+              <div className="form-group">
+                <label className="form-label">代理标签筛选（可选）</label>
+                <div className="rule-item">
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="输入标签后按回车添加，如：cn, high_speed"
+                    value={proxyTagInput}
+                    onChange={(e) => setProxyTagInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && proxyTagInput.trim()) {
+                        const tag = proxyTagInput.trim();
+                        if (!proxyTags.includes(tag)) {
+                          setProxyTags([...proxyTags, tag]);
+                        }
+                        setProxyTagInput('');
+                      }
+                    }}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      if (proxyTagInput.trim()) {
+                        const tag = proxyTagInput.trim();
+                        if (!proxyTags.includes(tag)) {
+                          setProxyTags([...proxyTags, tag]);
+                        }
+                        setProxyTagInput('');
+                      }
+                    }}
+                  >
+                    添加
+                  </button>
+                </div>
+                <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {proxyTags.length === 0 ? (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                      不设置标签则使用全部可用代理
+                    </span>
+                  ) : (
+                    proxyTags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="tag-badge"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          background: 'var(--bg-secondary)',
+                          borderRadius: '16px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {tag}
+                        <span
+                          onClick={() => setProxyTags(proxyTags.filter((_, i) => i !== index))}
+                          style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}
+                        >
+                          ×
+                        </span>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">代理切换策略</label>
+                  <select
+                    className="form-select"
+                    value={proxyRotationStrategy}
+                    onChange={(e) => setProxyRotationStrategy(e.target.value)}
+                  >
+                    <option value="random">随机选择</option>
+                    <option value="round_robin">轮询</option>
+                    <option value="by_response_time">按响应时间（快的优先）</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">代理失败重试次数</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-input"
+                    value={retryOnProxyFail}
+                    onChange={(e) => setRetryOnProxyFail(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="form-group">
+            <label className="form-label">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                启用请求频率限制
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={rateLimitEnabled}
+                    onChange={(e) => setRateLimitEnabled(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </span>
+            </label>
+          </div>
+
+          {rateLimitEnabled && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">每分钟最大请求数</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="form-input"
+                  value={rateLimitPerMinute}
+                  onChange={(e) => setRateLimitPerMinute(parseInt(e.target.value) || 60)}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">最小延迟（秒）</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                className="form-input"
+                value={delayMin}
+                onChange={(e) => setDelayMin(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">最大延迟（秒）</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                className="form-input"
+                value={delayMax}
+                onChange={(e) => setDelayMax(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <div className="form-hint">
+            每次请求前，系统会在 [最小延迟, 最大延迟] 区间内随机等待一段时间后再发送请求，模拟人类访问节奏
           </div>
         </div>
       </div>

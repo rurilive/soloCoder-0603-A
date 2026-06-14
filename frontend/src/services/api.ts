@@ -27,6 +27,15 @@ import type {
   CleaningPipelineUpdate,
   RuleTypeInfo,
   CleaningPreviewResponse,
+  Proxy,
+  ProxyCreate,
+  ProxyUpdate,
+  ProxyStats,
+  ProxySettings,
+  CheckResult,
+  BatchCheckResponse,
+  ProxyCheckLog,
+  PaginatedResponse,
 } from '../types';
 
 const api = axios.create({
@@ -111,6 +120,25 @@ export const cleaningApi = {
     api.post<CleaningPreviewResponse>('/cleaning/preview', { rules, sample_data: sampleData }),
   previewPipeline: (id: number, sampleData: Record<string, any>[]) =>
     api.post<CleaningPreviewResponse>(`/cleaning/pipelines/${id}/preview`, sampleData),
+};
+
+export const proxyApi = {
+  list: (skip = 0, limit = 100, params?: { status?: string; protocol?: string; tag?: string; keyword?: string }) =>
+    api.get<PaginatedResponse<Proxy>>('/proxies', { params: { skip, limit, ...params } }),
+  get: (id: number) => api.get<Proxy>(`/proxies/${id}`),
+  create: (data: ProxyCreate) => api.post<Proxy>('/proxies', data),
+  batchImport: (text: string) => api.post<{ imported: number; skipped: any[]; total: number }>('/proxies/batch', { text }),
+  update: (id: number, data: ProxyUpdate) => api.put<Proxy>(`/proxies/${id}`, data),
+  delete: (id: number) => api.delete(`/proxies/${id}`),
+  batchDelete: (ids: number[]) => api.delete<{ deleted: number }>('/proxies/batch', { data: { ids } }),
+  check: (id: number) => api.post<CheckResult>(`/proxies/${id}/check`),
+  batchCheck: (params?: { ids?: number[]; status?: string; protocol?: string; tags?: string[] }) =>
+    api.post<BatchCheckResponse>('/proxies/batch-check', params || {}),
+  getStats: () => api.get<ProxyStats>('/proxies/stats'),
+  getCheckLogs: (proxyId: number, skip = 0, limit = 50) =>
+    api.get<PaginatedResponse<ProxyCheckLog>>(`/proxies/check-logs/${proxyId}`, { params: { skip, limit } }),
+  getSettings: () => api.get<ProxySettings>('/proxies/settings'),
+  updateSettings: (data: ProxySettings) => api.put<ProxySettings>('/proxies/settings', data),
 };
 
 export default api;

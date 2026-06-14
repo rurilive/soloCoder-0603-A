@@ -41,6 +41,14 @@ export interface SpiderTask {
   scrape_rules: ScrapeRules;
   timeout: number;
   max_retries: number;
+  proxy_enabled?: boolean;
+  proxy_tags?: string[];
+  proxy_rotation_strategy?: string;
+  rate_limit_enabled?: boolean;
+  rate_limit_per_minute?: number;
+  delay_min?: number;
+  delay_max?: number;
+  retry_on_proxy_fail?: number;
   created_at: string;
   updated_at: string;
   script?: SpiderScript;
@@ -57,6 +65,14 @@ export interface SpiderTaskCreate {
   scrape_rules: ScrapeRules;
   timeout?: number;
   max_retries?: number;
+  proxy_enabled?: boolean;
+  proxy_tags?: string[];
+  proxy_rotation_strategy?: string;
+  rate_limit_enabled?: boolean;
+  rate_limit_per_minute?: number;
+  delay_min?: number;
+  delay_max?: number;
+  retry_on_proxy_fail?: number;
 }
 
 export interface SpiderTaskUpdate {
@@ -69,6 +85,14 @@ export interface SpiderTaskUpdate {
   scrape_rules?: ScrapeRules;
   timeout?: number;
   max_retries?: number;
+  proxy_enabled?: boolean;
+  proxy_tags?: string[];
+  proxy_rotation_strategy?: string;
+  rate_limit_enabled?: boolean;
+  rate_limit_per_minute?: number;
+  delay_min?: number;
+  delay_max?: number;
+  retry_on_proxy_fail?: number;
 }
 
 export interface SpiderJob {
@@ -324,4 +348,99 @@ export interface CleaningPreviewResponse {
   original: Record<string, any>[];
   cleaned: Record<string, any>[];
   rule_count: number;
+}
+
+export interface Proxy {
+  id: number;
+  ip: string;
+  port: number;
+  protocol: 'http' | 'https' | 'socks5' | string;
+  username?: string;
+  password?: string;
+  status: 'active' | 'inactive' | 'checking' | 'failed' | string;
+  success_count: number;
+  fail_count: number;
+  last_check_at?: string;
+  last_used_at?: string;
+  response_time: number;
+  tags: string[];
+  remark: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProxyCreate {
+  ip: string;
+  port: number;
+  protocol?: string;
+  username?: string;
+  password?: string;
+  status?: string;
+  tags?: string[];
+  remark?: string;
+}
+
+export interface ProxyUpdate {
+  ip?: string;
+  port?: number;
+  protocol?: string;
+  username?: string;
+  password?: string;
+  status?: string;
+  tags?: string[];
+  remark?: string;
+}
+
+export interface ProxyCheckLog {
+  id: number;
+  proxy_id: number;
+  success: boolean;
+  response_time: number;
+  status_code?: number;
+  error_message: string;
+  checked_at: string;
+}
+
+export interface ProxyStats {
+  total: number;
+  active: number;
+  inactive: number;
+  checking: number;
+  failed: number;
+  by_protocol: Record<string, number>;
+  avg_success_rate: number;
+  avg_response_time: number;
+}
+
+export interface ProxySettings {
+  proxy_check_enabled: boolean;
+  proxy_check_interval: number;
+  proxy_check_url: string;
+  proxy_check_timeout: number;
+  default_proxy_rotation_strategy: string;
+  default_rate_limit_per_minute: number;
+  default_delay_min: number;
+  default_delay_max: number;
+}
+
+export interface CheckResult {
+  proxy_id: number;
+  success: boolean;
+  response_time: number;
+  status_code?: number;
+  error_message: string;
+}
+
+export interface BatchCheckResponse {
+  total: number;
+  success: number;
+  failed: number;
+  results: CheckResult[];
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  skip: number;
+  limit: number;
 }

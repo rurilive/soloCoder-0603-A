@@ -4,12 +4,15 @@ from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..database import AsyncSessionLocal
+from ..config import settings
 from ..models import SpiderTask
 from .executor import SpiderExecutor
+from .proxy_pool import ProxyPoolService
 
 
 class TaskScheduler:
@@ -32,6 +35,7 @@ class TaskScheduler:
         if not self.scheduler.running:
             self.scheduler.start()
             await self._load_scheduled_tasks()
+            self._schedule_proxy_check()
 
     async def shutdown(self):
         if self.scheduler.running:
@@ -49,6 +53,26 @@ class TaskScheduler:
 
             for task in tasks:
                 self.schedule_task(task.id, task.cron_expression)
+
+    def _schedule_proxy_check(self):
+        if settings.proxy_check_enabled and settings.proxy_check_interval > 0:
+            job_id = "proxy_check_job"
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
+            self.scheduler.add_job(
+                self._proxy_check_job,
+                trigger=IntervalTrigger(minutes=settings.proxy_check_interval),
+                id=job_id,
+                replace_existing=True,
+            )
+
+    async def _proxy_check_job(self):
+        try:
+            async with AsyncSessionLocal() as db:
+                service = ProxyPoolService(db)
+                await service.check_all_proxies()
+        except Exception as e:
+            print(f"Error in proxy check job: {e}")
 
     def schedule_task(self, task_id: int, cron_expression: str) -> str:
         self.remove_task(task_id)

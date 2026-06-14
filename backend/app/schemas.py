@@ -49,6 +49,14 @@ class SpiderTaskBase(BaseModel):
     scrape_rules: ScrapeRules = Field(default_factory=ScrapeRules)
     timeout: int = 60
     max_retries: int = 3
+    proxy_enabled: bool = False
+    proxy_tags: List[str] = Field(default_factory=list)
+    proxy_rotation_strategy: str = "random"
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 60
+    delay_min: float = 0.5
+    delay_max: float = 2.0
+    retry_on_proxy_fail: int = 3
 
 
 class SpiderTaskCreate(SpiderTaskBase):
@@ -65,6 +73,14 @@ class SpiderTaskUpdate(BaseModel):
     scrape_rules: Optional[ScrapeRules] = None
     timeout: Optional[int] = None
     max_retries: Optional[int] = None
+    proxy_enabled: Optional[bool] = None
+    proxy_tags: Optional[List[str]] = None
+    proxy_rotation_strategy: Optional[str] = None
+    rate_limit_enabled: Optional[bool] = None
+    rate_limit_per_minute: Optional[int] = None
+    delay_min: Optional[float] = None
+    delay_max: Optional[float] = None
+    retry_on_proxy_fail: Optional[int] = None
 
 
 class SpiderTask(SpiderTaskBase):
@@ -325,3 +341,111 @@ class RuleTypeInfo(BaseModel):
     category: str
     has_field: bool
     params: List[Dict[str, Any]]
+
+
+class ProxyBase(BaseModel):
+    ip: str
+    port: int
+    protocol: str = "http"
+    username: Optional[str] = None
+    password: Optional[str] = None
+    status: str = "inactive"
+    tags: List[str] = Field(default_factory=list)
+    remark: str = ""
+
+
+class ProxyCreate(ProxyBase):
+    pass
+
+
+class ProxyUpdate(BaseModel):
+    ip: Optional[str] = None
+    port: Optional[int] = None
+    protocol: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[List[str]] = None
+    remark: Optional[str] = None
+
+
+class Proxy(ProxyBase):
+    id: int
+    success_count: int = 0
+    fail_count: int = 0
+    last_check_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    response_time: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProxyCheckLogBase(BaseModel):
+    proxy_id: int
+    success: bool
+    response_time: int = 0
+    status_code: Optional[int] = None
+    error_message: str = ""
+
+
+class ProxyCheckLog(ProxyCheckLogBase):
+    id: int
+    checked_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BatchImportRequest(BaseModel):
+    text: str
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: List[int]
+
+
+class BatchCheckRequest(BaseModel):
+    ids: Optional[List[int]] = None
+    status: Optional[str] = None
+    protocol: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class ProxyStats(BaseModel):
+    total: int = 0
+    active: int = 0
+    inactive: int = 0
+    checking: int = 0
+    failed: int = 0
+    by_protocol: Dict[str, int] = Field(default_factory=dict)
+    avg_success_rate: float = 0.0
+    avg_response_time: float = 0.0
+
+
+class ProxySettings(BaseModel):
+    proxy_check_enabled: bool = True
+    proxy_check_interval: int = 30
+    proxy_check_url: str = "https://httpbin.org/ip"
+    proxy_check_timeout: int = 10
+    default_proxy_rotation_strategy: str = "random"
+    default_rate_limit_per_minute: int = 60
+    default_delay_min: float = 0.5
+    default_delay_max: float = 2.0
+
+
+class CheckResult(BaseModel):
+    proxy_id: int
+    success: bool
+    response_time: int = 0
+    status_code: Optional[int] = None
+    error_message: str = ""
+
+
+class BatchCheckResponse(BaseModel):
+    total: int = 0
+    success: int = 0
+    failed: int = 0
+    results: List[CheckResult] = Field(default_factory=list)

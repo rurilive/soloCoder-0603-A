@@ -16,6 +16,7 @@ from ..config import settings
 from ..models import SpiderJob, SpiderResult, SpiderTask, SpiderScript, CleaningPipeline
 from ..schemas import ScrapeRules
 from .cleaning_engine import CleaningEngine
+from .proxy_pool import ProxyPoolService
 
 
 class SpiderContext:
@@ -53,12 +54,33 @@ class SpiderExecutor:
         max_retries = task.max_retries or 0
         execution_id = uuid.uuid4().hex
 
+        proxy_config = {
+            "enabled": bool(getattr(task, "proxy_enabled", False)),
+            "tags": getattr(task, "proxy_tags", []) or [],
+            "strategy": getattr(task, "proxy_rotation_strategy", settings.default_proxy_rotation_strategy),
+            "retry_on_fail": getattr(task, "retry_on_proxy_fail", 3),
+        }
+
+        rate_config = {
+            "enabled": bool(getattr(task, "rate_limit_enabled", True)),
+            "per_minute": getattr(task, "rate_limit_per_minute", settings.default_rate_limit_per_minute),
+            "delay_min": getattr(task, "delay_min", settings.default_delay_min),
+            "delay_max": getattr(task, "delay_max", settings.default_delay_max),
+        }
+
+        available_proxies: List[Dict[str, Any]] = []
+        if proxy_config["enabled"]:
+            proxy_service = ProxyPoolService(self.db)
+            available_proxies = await proxy_service.fetch_available_proxies(tags=proxy_config["tags"])
+
         last_result = None
         for attempt in range(max_retries + 1):
             if attempt > 0:
                 await asyncio.sleep(1)
             last_result = await self._execute(
-                script.code, rules, task.id, task.timeout, attempt, execution_id
+                script.code, rules, task.id, task.timeout, attempt, execution_id,
+                proxy_config=proxy_config, rate_config=rate_config,
+                available_proxies=available_proxies,
             )
             if last_result.get("status") == "completed":
                 break
@@ -78,7 +100,24 @@ class SpiderExecutor:
 
         rules = scrape_rules or ScrapeRules()
         execution_id = uuid.uuid4().hex
-        return await self._execute(script.code, rules, None, 60, 0, execution_id)
+
+        proxy_config = {
+            "enabled": False,
+            "tags": [],
+            "strategy": settings.default_proxy_rotation_strategy,
+            "retry_on_fail": 3,
+        }
+        rate_config = {
+            "enabled": True,
+            "per_minute": settings.default_rate_limit_per_minute,
+            "delay_min": settings.default_delay_min,
+            "delay_max": settings.default_delay_max,
+        }
+
+        return await self._execute(
+            script.code, rules, None, 60, 0, execution_id,
+            proxy_config=proxy_config, rate_config=rate_config, available_proxies=[],
+        )
 
     async def execute_code(
         self,
@@ -87,7 +126,24 @@ class SpiderExecutor:
     ) -> Dict[str, Any]:
         rules = scrape_rules or ScrapeRules()
         execution_id = uuid.uuid4().hex
-        return await self._execute(code, rules, None, 60, 0, execution_id)
+
+        proxy_config = {
+            "enabled": False,
+            "tags": [],
+            "strategy": settings.default_proxy_rotation_strategy,
+            "retry_on_fail": 3,
+        }
+        rate_config = {
+            "enabled": True,
+            "per_minute": settings.default_rate_limit_per_minute,
+            "delay_min": settings.default_delay_min,
+            "delay_max": settings.default_delay_max,
+        }
+
+        return await self._execute(
+            code, rules, None, 60, 0, execution_id,
+            proxy_config=proxy_config, rate_config=rate_config, available_proxies=[],
+        )
 
     async def _execute(
         self,
@@ -96,10 +152,19 @@ class SpiderExecutor:
         task_id: Optional[int],
         timeout: int,
         retry_count: int = 0,
-        execution_id: Optional[str] = None
+        execution_id: Optional[str] = None,
+        proxy_config: Optional[Dict[str, Any]] = None,
+        rate_config: Optional[Dict[str, Any]] = None,
+        available_proxies: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         if execution_id is None:
             execution_id = uuid.uuid4().hex
+        if proxy_config is None:
+            proxy_config = {"enabled": False, "tags": [], "strategy": "random", "retry_on_fail": 3}
+        if rate_config is None:
+            rate_config = {"enabled": True, "per_minute": 60, "delay_min": 0.5, "delay_max": 2.0}
+        if available_proxies is None:
+            available_proxies = []
 
         job = SpiderJob(
             task_id=task_id or 0,
@@ -115,7 +180,11 @@ class SpiderExecutor:
         script_path = settings.scripts_dir / f"job_{job.id}_{uuid.uuid4().hex}.py"
 
         try:
-            full_code = self._wrap_code(code, rules, retry_count)
+            full_code = self._wrap_code(
+                code, rules, retry_count,
+                proxy_config=proxy_config, rate_config=rate_config,
+                available_proxies=available_proxies,
+            )
             script_path.write_text(full_code)
 
             output_path = settings.results_dir / f"job_{job.id}_output.json"
@@ -217,8 +286,19 @@ class SpiderExecutor:
             if output_path.exists():
                 output_path.unlink()
 
-    def _wrap_code(self, user_code: str, rules: ScrapeRules, retry_count: int = 0) -> str:
+    def _wrap_code(
+        self,
+        user_code: str,
+        rules: ScrapeRules,
+        retry_count: int = 0,
+        proxy_config: Optional[Dict[str, Any]] = None,
+        rate_config: Optional[Dict[str, Any]] = None,
+        available_proxies: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
         rules_json = json.dumps(rules.model_dump())
+        proxy_json = json.dumps(proxy_config or {"enabled": False})
+        rate_json = json.dumps(rate_config or {"enabled": True})
+        proxies_json = json.dumps(available_proxies or [])
         indented_user_code = "\n".join("    " + line for line in user_code.split("\n"))
 
         wrapper = '''
@@ -226,6 +306,8 @@ import sys
 import json
 import traceback
 import time
+import random
+import threading
 from collections import deque
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -239,6 +321,9 @@ except ImportError:
 output_path = Path(sys.argv[1])
 
 rules_data = json.loads(%r)
+_proxy_config = json.loads(%r)
+_rate_config = json.loads(%r)
+_available_proxies = json.loads(%r)
 
 class _ScrapeRules:
     def __init__(self, data):
@@ -257,6 +342,183 @@ logs = []
 _visited_urls = set()
 _pages_scraped = 0
 
+# ========== 频率限制器（令牌桶） ==========
+class _RateLimiter:
+    def __init__(self, per_minute: int, enabled: bool = True):
+        self.enabled = enabled and per_minute > 0
+        if self.enabled:
+            self._rate = per_minute / 60.0
+            self._tokens = float(min(per_minute, 10))
+            self._last_refill = time.time()
+            self._lock = threading.Lock()
+
+    def _refill(self):
+        now = time.time()
+        elapsed = now - self._last_refill
+        self._tokens = min(self._tokens + elapsed * self._rate, self._rate * 60)
+        self._last_refill = now
+
+    def acquire(self, timeout: float = 30.0) -> bool:
+        if not self.enabled:
+            return True
+        start = time.time()
+        while time.time() - start < timeout:
+            with self._lock:
+                self._refill()
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return True
+            time.sleep(0.05)
+        return False
+
+_rate_limiter = _RateLimiter(
+    per_minute=_rate_config.get("per_minute", 60),
+    enabled=_rate_config.get("enabled", True),
+)
+
+def wait_for_rate_limit():
+    if not _rate_limiter.acquire():
+        log("警告：频率限制等待超时，继续请求")
+
+# ========== 代理池管理 ==========
+class _ProxySelector:
+    def __init__(self, proxies: list, strategy: str = "random", enabled: bool = True):
+        self.enabled = enabled and bool(proxies)
+        self._proxies = list(proxies) if proxies else []
+        self._strategy = strategy
+        self._rr_index = 0
+        self._lock = threading.Lock()
+        self._current = None
+        self._used_count = {}
+
+    def has_available(self) -> bool:
+        return len(self._proxies) > 0
+
+    def available_count(self) -> int:
+        return len(self._proxies)
+
+    def _weighted_by_rt(self):
+        weights = []
+        for p in self._proxies:
+            rt = max(p.get("response_time", 100) or 1, 1)
+            w = 1000.0 / rt
+            weights.append(max(w, 0.1))
+        return weights
+
+    def get_next(self, exclude_id: int = None):
+        if not self.enabled:
+            return None
+        candidates = self._proxies
+        if exclude_id is not None and len(self._proxies) > 1:
+            candidates = [p for p in self._proxies if p.get("id") != exclude_id]
+            if not candidates:
+                candidates = self._proxies
+        if not candidates:
+            return None
+
+        with self._lock:
+            if self._strategy == "round_robin":
+                p = candidates[self._rr_index % len(candidates)]
+                self._rr_index += 1
+            elif self._strategy == "by_response_time":
+                try:
+                    weights = []
+                    for p in candidates:
+                        rt = max(p.get("response_time", 100) or 1, 1)
+                        w = 1000.0 / rt
+                        weights.append(max(w, 0.1))
+                    p = random.choices(candidates, weights=weights, k=1)[0]
+                except Exception:
+                    p = random.choice(candidates)
+            else:
+                p = random.choice(candidates)
+
+            pid = p.get("id")
+            self._used_count[pid] = self._used_count.get(pid, 0) + 1
+            self._current = p
+            return p
+
+    def get_current(self):
+        return self._current
+
+    def mark_failed(self, proxy_id: int):
+        if len(self._proxies) <= 1:
+            return
+        self._proxies = [p for p in self._proxies if p.get("id") != proxy_id]
+
+_proxy_selector = _ProxySelector(
+    proxies=_available_proxies,
+    strategy=_proxy_config.get("strategy", "random"),
+    enabled=_proxy_config.get("enabled", False),
+)
+_proxy_retry_max = _proxy_config.get("retry_on_fail", 3)
+
+def get_current_proxy():
+    p = _proxy_selector.get_current()
+    if p:
+        return {
+            "id": p.get("id"),
+            "ip": p.get("ip"),
+            "port": p.get("port"),
+            "protocol": p.get("protocol"),
+            "proxy_url": p.get("proxy_url"),
+        }
+    return None
+
+def has_available_proxies():
+    return _proxy_selector.has_available()
+
+def rotate_proxy(reason: str = ""):
+    current = _proxy_selector.get_current()
+    exclude_id = current.get("id") if current else None
+    if reason:
+        log(f"切换代理，原因: {reason}")
+    new_p = _proxy_selector.get_next(exclude_id=exclude_id)
+    if new_p:
+        log(f"使用代理: {new_p.get('protocol')}://{new_p.get('ip')}:{new_p.get('port')}")
+        return {
+            "id": new_p.get("id"),
+            "ip": new_p.get("ip"),
+            "port": new_p.get("port"),
+            "protocol": new_p.get("protocol"),
+        }
+    else:
+        log("警告：无可用代理，使用直连")
+        return None
+
+def report_proxy(success: bool, response_time: int = 0):
+    pass
+
+# ========== 随机延迟 ==========
+def _random_delay():
+    dmin = _rate_config.get("delay_min", 0.5) or 0
+    dmax = _rate_config.get("delay_max", 2.0) or 0
+    base_delay = rules.delay or 0
+    delay = max(base_delay, random.uniform(dmin, dmax) if dmax >= dmin else dmin)
+    if delay > 0:
+        time.sleep(delay)
+
+# ========== requests monkeypatch ==========
+_original_request = None
+try:
+    _original_request = requests.Session.request
+except Exception:
+    pass
+
+def _patched_request(self, method, url, **kwargs):
+    if _proxy_selector.enabled and "proxies" not in kwargs:
+        proxy = _proxy_selector.get_next()
+        if proxy:
+            kwargs["proxies"] = proxy.get("proxies")
+    return _original_request(self, method, url, **kwargs)
+
+if _original_request is not None:
+    try:
+        requests.Session.request = _patched_request
+    except Exception:
+        pass
+
+# ========== 通用辅助函数 ==========
 def save_item(data, url=""):
     results.append({"url": url, "data": data})
 
@@ -317,7 +579,7 @@ def _extract_data(soup, url=""):
             data[key] = f"ERROR: {str(e)}"
     return data
 
-def fetch_page(url):
+def fetch_page(url, force_proxy: bool = False):
     global _pages_scraped
     if _pages_scraped >= rules.max_pages:
         return None
@@ -333,19 +595,75 @@ def fetch_page(url):
     _pages_scraped += 1
 
     log(f"请求页面 [{_pages_scraped}/{rules.max_pages}]: {url}")
-    try:
-        resp = requests.get(url, headers=_get_headers(), timeout=30)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "lxml")
-        return soup
-    except Exception as e:
-        log(f"请求失败 {url}: {str(e)}")
-        return None
+
+    _attempts = 0
+    _max_attempts = max(1, _proxy_retry_max if _proxy_selector.enabled else 1)
+    _last_error = ""
+
+    while _attempts < _max_attempts:
+        _attempts += 1
+
+        wait_for_rate_limit()
+        _random_delay()
+
+        proxies = None
+        proxy_id = None
+        proxy_desc = "直连"
+
+        if _proxy_selector.enabled:
+            proxy = _proxy_selector.get_next()
+            if proxy:
+                proxies = proxy.get("proxies")
+                proxy_id = proxy.get("id")
+                proxy_desc = f"{proxy.get('protocol')}://{proxy.get('ip')}:{proxy.get('port')}"
+
+        log(f"  [尝试 {_attempts}/{_max_attempts}] 通过 {proxy_desc} 请求")
+
+        _start = time.time()
+        try:
+            resp = requests.get(
+                url,
+                headers=_get_headers(),
+                proxies=proxies,
+                timeout=30,
+                allow_redirects=True,
+            )
+            _rt = int((time.time() - _start) * 1000)
+
+            if 400 <= resp.status_code < 500 and resp.status_code in (403, 429):
+                _last_error = f"HTTP {resp.status_code}"
+                log(f"  收到 {resp.status_code}，尝试切换代理")
+                if proxy_id is not None:
+                    _proxy_selector.mark_failed(proxy_id)
+                time.sleep(1)
+                continue
+
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "lxml")
+            log(f"  请求成功 ({resp.status_code}, 耗时 {_rt}ms)")
+            return soup
+
+        except Exception as e:
+            _rt = int((time.time() - _start) * 1000)
+            _last_error = str(e)
+            log(f"  请求失败: {_last_error}")
+            if proxy_id is not None:
+                _proxy_selector.mark_failed(proxy_id)
+            if _attempts < _max_attempts:
+                time.sleep(0.5)
+            continue
+
+    log(f"  最终失败 {url}: {_last_error}")
+    return None
 
 def auto_crawl():
     global _pages_scraped
     log(f"开始自动爬取，起始 URL 数量: {len(rules.start_urls)}")
     log(f"配置: follow_links={rules.follow_links}, max_pages={rules.max_pages}")
+    if _proxy_selector.enabled:
+        log(f"代理池: 已启用，可用代理数 {_proxy_selector.available_count()}，策略: {_proxy_config.get('strategy')}")
+    if _rate_config.get("enabled"):
+        log(f"频率限制: 每分钟 {_rate_config.get('per_minute')} 次，延迟 {_rate_config.get('delay_min')}s~{_rate_config.get('delay_max')}s")
     if rules.follow_links and rules.allowed_domains:
         log(f"允许的域名: {', '.join(rules.allowed_domains)}")
     if rules.extract_patterns:
@@ -359,7 +677,7 @@ def auto_crawl():
 
     first_request = True
     while url_queue and _pages_scraped < rules.max_pages:
-        if not first_request and rules.delay > 0:
+        if not first_request and rules.delay > 0 and not _rate_config.get("enabled"):
             time.sleep(rules.delay)
         first_request = False
 
@@ -398,7 +716,7 @@ else:
 
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
-''' % (rules_json, indented_user_code)
+''' % (rules_json, proxy_json, rate_json, proxies_json, indented_user_code)
         return wrapper
 
     async def _get_cleaning_rules(self, task_id: int) -> Optional[List[Dict[str, Any]]]:
@@ -428,3 +746,4 @@ with open(output_path, "w", encoding="utf-8") as f:
                 "order_index": rule.order_index,
             })
         return rules if rules else None
+

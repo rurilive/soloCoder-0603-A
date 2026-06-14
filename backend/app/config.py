@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    proxy_check_enabled: bool = True
+    proxy_check_interval: int = 30
+    proxy_check_url: str = "https://httpbin.org/ip"
+    proxy_check_timeout: int = 10
+    default_proxy_rotation_strategy: str = "random"
+    default_rate_limit_per_minute: int = 60
+    default_delay_min: float = 0.5
+    default_delay_max: float = 2.0
+
     class Config:
         env_file = ".env"
 
