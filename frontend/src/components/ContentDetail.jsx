@@ -14,7 +14,10 @@ import {
   Typography,
   Divider,
   Spin,
-  Alert
+  Alert,
+  Progress,
+  Row,
+  Col
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -118,6 +121,23 @@ function ContentDetail() {
     return 'default';
   };
 
+  const getMLResultTag = (result) => {
+    if (!result) return <Tag color="default">未调用</Tag>;
+    const colors = {
+      auto_pass: 'green',
+      auto_reject: 'red',
+      manual: 'blue',
+      unavailable: 'default'
+    };
+    const texts = {
+      auto_pass: 'ML建议通过',
+      auto_reject: 'ML建议拒绝',
+      manual: 'ML建议人工',
+      unavailable: 'ML不可用'
+    };
+    return <Tag color={colors[result]}>{texts[result]}</Tag>;
+  };
+
   const getImageReviewTag = (result, confidence) => {
     if (!result) return null;
     const colors = { safe: 'green', unsafe: 'red', uncertain: 'orange' };
@@ -146,12 +166,22 @@ function ContentDetail() {
       </div>
 
       <Card>
-        <Space style={{ marginBottom: 16 }}>
+        <Space style={{ marginBottom: 16 }} wrap>
           {getStatusTag(content.status)}
           {getAutoReviewTag(content.auto_review_result)}
           <Tag color={getScoreColor(content.auto_review_score)}>
-            风险分: {content.auto_review_score}
+            综合风险分: {content.auto_review_score}
           </Tag>
+          {getMLResultTag(content.ml_result)}
+          {content.ml_score != null && (
+            <Tag color={content.ml_score < 0.3 ? 'green' : content.ml_score > 0.7 ? 'red' : 'blue'}>
+              ML评分: {(content.ml_score * 100).toFixed(1)}%
+              {content.ml_confidence != null && ` (置信度 ${(content.ml_confidence * 100).toFixed(0)}%)`}
+            </Tag>
+          )}
+          {content.ml_model_version && (
+            <Tag color="purple">模型: {content.ml_model_version}</Tag>
+          )}
           {content.image_review_result && getImageReviewTag(content.image_review_result, content.image_review_confidence)}
         </Space>
 
@@ -225,6 +255,39 @@ function ContentDetail() {
             showIcon
             style={{ marginBottom: 24 }}
           />
+        )}
+
+        {content.ml_category_scores && content.ml_category_scores.length > 0 && (
+          <Card
+            size="small"
+            title="ML 分类风险分详情"
+            style={{ marginBottom: 24, background: '#f9f9ff' }}
+          >
+            <Row gutter={[16, 12]}>
+              {content.ml_category_scores.map((cat, i) => {
+                const pct = Math.round(cat.score * 100);
+                const color = pct > 70 ? '#ff4d4f' : pct > 40 ? '#faad14' : '#52c41a';
+                const labelMap = {
+                  ad: '广告',
+                  gambling: '赌博',
+                  porn: '色情',
+                  violence: '暴力',
+                  drugs: '毒品',
+                  politics: '政治敏感',
+                  image: '图片风险'
+                };
+                return (
+                  <Col xs={24} sm={12} md={8} key={i}>
+                    <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+                      <b>{labelMap[cat.category] || cat.category}</b>
+                      <span style={{ color }}>{pct}%</span>
+                    </div>
+                    <Progress percent={pct} strokeColor={color} size="small" showInfo={false} />
+                  </Col>
+                );
+              })}
+            </Row>
+          </Card>
         )}
 
         {content.review_note && (

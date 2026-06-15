@@ -1,12 +1,14 @@
 import React from 'react';
-import { Card, Row, Col, Statistic, Progress, Tag } from 'antd';
+import { Card, Row, Col, Statistic, Progress, Tag, Descriptions } from 'antd';
 import {
   FileTextOutlined,
   InboxOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   RobotOutlined,
-  UserOutlined
+  UserOutlined,
+  ExperimentOutlined,
+  AuditOutlined
 } from '@ant-design/icons';
 
 function DashboardPage({ stats }) {
@@ -16,6 +18,7 @@ function DashboardPage({ stats }) {
   const manualRate = totalWithManual > 0 ? Math.round(((stats.manual || 0) / totalWithManual) * 100) : 0;
   const passRate = stats.total > 0 ? Math.round(((stats.approved || 0) / stats.total) * 100) : 0;
   const rejectRate = stats.total > 0 ? Math.round(((stats.rejected || 0) / stats.total) * 100) : 0;
+  const mlRate = stats.total > 0 ? Math.round(((stats.ml_processed || 0) / stats.total) * 100) : 0;
 
   return (
     <div>
@@ -101,35 +104,101 @@ function DashboardPage({ stats }) {
       </Row>
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={24} lg={8}>
+          <Card>
+            <Statistic
+              title="ML模型审核覆盖"
+              value={stats.ml_processed || 0}
+              valueStyle={{ color: '#722ed1' }}
+              prefix={<ExperimentOutlined />}
+              suffix={`/ ${stats.total || 0}`}
+            />
+            <Progress
+              percent={mlRate}
+              strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }}
+              style={{ marginTop: 8 }}
+              size="small"
+            />
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card>
+            <Statistic
+              title="抽样批次"
+              value={stats.sample_batches || 0}
+              prefix={<AuditOutlined />}
+              valueStyle={{ color: '#13c2c2' }}
+            />
+            <div style={{ marginTop: 8, color: '#666', fontSize: 13 }}>
+              已抽样 {stats.total_sampled || 0} 条，已复审 {stats.reviewed_samples || 0} 条
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card>
+            <Statistic
+              title="抽样一致率"
+              value={stats.sample_consistency_rate != null ? (stats.sample_consistency_rate * 100).toFixed(1) : '-'}
+              suffix={stats.sample_consistency_rate != null ? '%' : ''}
+              valueStyle={{
+                color: stats.sample_consistency_rate >= 0.8 ? '#52c41a'
+                  : stats.sample_consistency_rate >= 0.6 ? '#faad14'
+                  : '#ff4d4f'
+              }}
+              prefix={<Tag color="blue">质量</Tag>}
+            />
+            <div style={{ marginTop: 8, color: '#666', fontSize: 13 }}>
+              {stats.sample_consistency_rate == null ? '暂无复审数据' :
+                stats.sample_consistency_rate >= 0.8 ? '模型质量优秀' :
+                stats.sample_consistency_rate >= 0.6 ? '模型质量良好' :
+                '建议检查并调整阈值'}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24}>
           <Card title="系统说明">
             <Row gutter={[16, 16]}>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={6}>
                 <h4><Tag color="blue">自动审核流程</Tag></h4>
                 <ol>
-                  <li>内容提交后自动进入审核引擎</li>
-                  <li>根据配置的规则计算风险分</li>
-                  <li>风险分 ≤ -5：自动通过</li>
-                  <li>风险分 ≥ 5：自动拒绝</li>
-                  <li>其他情况：进入人工审核队列</li>
+                  <li>内容提交后进入双引擎审核</li>
+                  <li>规则引擎：匹配规则计算风险分</li>
+                  <li>ML模型：HTTP API调用获取分类分</li>
+                  <li>按权重加权混合两路分数</li>
+                  <li>与通过/拒绝阈值比较出结果</li>
                 </ol>
               </Col>
-              <Col xs={24} md={8}>
-                <h4><Tag color="green">人工审核操作</Tag></h4>
+              <Col xs={24} md={6}>
+                <h4><Tag color="purple">ML模型集成</Tag></h4>
                 <ul>
-                  <li>查看内容详情和自动审核结果</li>
-                  <li>执行通过/拒绝操作</li>
-                  <li>为内容打标签分类</li>
-                  <li>记录审核备注</li>
+                  <li>独立HTTP服务 (端口1112)</li>
+                  <li>输出6类风险分 + 总体分</li>
+                  <li>可配置通过/拒绝阈值</li>
+                  <li>可调整ML/规则权重占比</li>
+                  <li>模型调用失败自动降级纯规则</li>
                 </ul>
               </Col>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={6}>
+                <h4><Tag color="cyan">抽样复审机制</Tag></h4>
+                <ul>
+                  <li>每60秒定时自动抽样 (10%)</li>
+                  <li>支持手动触发抽样任务</li>
+                  <li>按批次管理抽样任务</li>
+                  <li>对比人工与自动审核一致性</li>
+                  <li>自动统计模型一致率指标</li>
+                </ul>
+              </Col>
+              <Col xs={24} md={6}>
                 <h4><Tag color="orange">规则管理</Tag></h4>
                 <ul>
                   <li>关键词匹配规则</li>
                   <li>正则表达式规则</li>
                   <li>内容长度规则</li>
-                  <li>可调整规则分值和启用状态</li>
+                  <li>可调整规则分值</li>
+                  <li>可随时启用/禁用规则</li>
                 </ul>
               </Col>
             </Row>

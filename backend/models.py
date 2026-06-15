@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, JSON, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
@@ -21,11 +21,18 @@ class Content(Base):
     auto_review_result = Column(String(50))
     auto_review_score = Column(Integer)
     auto_review_reason = Column(Text)
+    ml_score = Column(Float)
+    ml_confidence = Column(Float)
+    ml_result = Column(String(50))
+    ml_model_version = Column(String(100))
+    ml_category_scores = Column(JSON)
     reviewed_at = Column(DateTime)
     reviewed_by = Column(String(100))
     review_note = Column(Text)
 
     reviews = relationship("ReviewLog", back_populates="content", cascade="all, delete-orphan")
+    ml_reviews = relationship("MLReviewRecord", back_populates="content", cascade="all, delete-orphan")
+    sample_reviews = relationship("SampleReview", back_populates="content", cascade="all, delete-orphan")
 
 
 class ReviewLog(Base):
@@ -54,3 +61,73 @@ class AutoReviewRule(Base):
     enabled = Column(Boolean, default=True)
     description = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MLThresholdConfig(Base):
+    __tablename__ = "ml_threshold_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True)
+    pass_threshold = Column(Float, default=0.3)
+    reject_threshold = Column(Float, default=0.7)
+    ml_weight = Column(Float, default=0.5)
+    rule_weight = Column(Float, default=0.5)
+    enabled = Column(Boolean, default=True)
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MLReviewRecord(Base):
+    __tablename__ = "ml_review_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_id = Column(Integer, ForeignKey("contents.id"))
+    model_version = Column(String(100))
+    overall_score = Column(Float)
+    confidence = Column(Float)
+    is_safe = Column(Boolean)
+    category_scores = Column(JSON)
+    detected_topics = Column(JSON)
+    processing_time_ms = Column(Integer)
+    threshold_pass = Column(Float)
+    threshold_reject = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    content = relationship("Content", back_populates="ml_reviews")
+
+
+class SampleReview(Base):
+    __tablename__ = "sample_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_id = Column(Integer, ForeignKey("contents.id"))
+    sample_batch_id = Column(String(100), index=True)
+    original_status = Column(String(50))
+    original_reviewer = Column(String(100))
+    sample_reason = Column(String(255))
+    review_status = Column(String(50), default="pending")
+    review_result = Column(String(50))
+    reviewed_by = Column(String(100))
+    review_note = Column(Text)
+    is_consistent = Column(Boolean)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime)
+
+    content = relationship("Content", back_populates="sample_reviews")
+
+
+class SampleBatch(Base):
+    __tablename__ = "sample_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(String(100), unique=True, index=True, nullable=False)
+    sample_count = Column(Integer, default=0)
+    sample_rate = Column(Float, default=0.1)
+    status = Column(String(50), default="active")
+    reviewed_count = Column(Integer, default=0)
+    consistent_count = Column(Integer, default=0)
+    inconsistent_count = Column(Integer, default=0)
+    consistency_rate = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)

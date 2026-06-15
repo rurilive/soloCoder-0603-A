@@ -6,7 +6,9 @@ import {
   CloseCircleOutlined,
   SettingOutlined,
   PlusCircleOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  ExperimentOutlined,
+  AuditOutlined
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -16,8 +18,10 @@ import RejectedPage from './pages/RejectedPage';
 import RulesPage from './pages/RulesPage';
 import SubmitPage from './pages/SubmitPage';
 import DashboardPage from './pages/DashboardPage';
+import MLThresholdPage from './pages/MLThresholdPage';
+import SampleReviewPage from './pages/SampleReviewPage';
 import ContentDetail from './components/ContentDetail';
-import { statsAPI } from './services/api';
+import { statsAPI, samplingAPI } from './services/api';
 
 const { Header, Sider, Content } = Layout;
 
@@ -31,6 +35,7 @@ function App() {
     rejected: 0,
     total: 0
   });
+  const [pendingSamples, setPendingSamples] = useState(0);
 
   const fetchStats = async () => {
     try {
@@ -41,9 +46,22 @@ function App() {
     }
   };
 
+  const fetchPendingSamples = async () => {
+    try {
+      const res = await samplingAPI.pendingReviews();
+      setPendingSamples(res.data?.length || 0);
+    } catch (err) {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    fetchPendingSamples();
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchPendingSamples();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -131,6 +149,23 @@ function App() {
       key: '/rules',
       icon: <SettingOutlined />,
       label: '审核规则'
+    },
+    {
+      key: '/ml-threshold',
+      icon: <ExperimentOutlined />,
+      label: 'ML模型阈值'
+    },
+    {
+      key: '/sample-review',
+      icon: <AuditOutlined />,
+      label: (
+        <span>
+          抽样复审
+          {pendingSamples > 0 && (
+            <Badge count={pendingSamples} size="small" style={{ marginLeft: 8 }} />
+          )}
+        </span>
+      )
     }
   ];
 
@@ -184,6 +219,8 @@ function App() {
             <Route path="/rejected" element={<RejectedPage />} />
             <Route path="/rules" element={<RulesPage />} />
             <Route path="/submit" element={<SubmitPage />} />
+            <Route path="/ml-threshold" element={<MLThresholdPage />} />
+            <Route path="/sample-review" element={<SampleReviewPage />} />
             <Route path="/content/:id" element={<ContentDetail />} />
           </Routes>
         </Content>
