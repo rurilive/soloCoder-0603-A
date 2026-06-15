@@ -58,23 +58,25 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
     text_engine = AutoModerationEngine(db)
     text_result = text_engine.review(content.title, content.body)
 
-    db_content.auto_review_result = text_result.result
     db_content.auto_review_score = text_result.score
-    db_content.auto_review_reason = text_result.reason
 
     final_result = text_result.result
     final_reason = text_result.reason
 
     if img_result:
+        img_desc = {
+            "safe": "图片审核正常",
+            "unsafe": "图片审核不通过",
+            "uncertain": "图片审核不确定需人工"
+        }
+        final_reason = f"{img_desc[img_result.result]}: {img_result.reason}; 文字审核: {final_reason}"
+
         if img_result.result == "unsafe":
             final_result = "auto_reject"
-            final_reason = f"图片审核不通过: {img_result.reason}; 文字审核: {final_reason}"
         elif img_result.result == "uncertain" and final_result == "auto_pass":
             final_result = "manual"
-            final_reason = f"图片审核不确定需人工: {img_result.reason}; 文字审核: {final_reason}"
-        elif img_result.result == "uncertain" and final_result == "manual":
-            final_reason = f"图片审核不确定需人工: {img_result.reason}; 文字审核: {final_reason}"
 
+    db_content.auto_review_result = final_result
     db_content.auto_review_reason = final_reason
     if final_result == "auto_pass":
         db_content.status = "approved"
