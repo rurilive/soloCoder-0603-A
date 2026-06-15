@@ -58,8 +58,7 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
     text_engine = AutoModerationEngine(db)
     text_result = text_engine.review(content.title, content.body)
 
-    db_content.auto_review_score = text_result.score
-
+    final_score = text_result.score
     final_result = text_result.result
     final_reason = text_result.reason
 
@@ -73,9 +72,15 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
 
         if img_result.result == "unsafe":
             final_result = "auto_reject"
-        elif img_result.result == "uncertain" and final_result == "auto_pass":
-            final_result = "manual"
+            final_score += 10
+        elif img_result.result == "uncertain":
+            final_score += 3
+            if final_result == "auto_pass":
+                final_result = "manual"
+        elif img_result.result == "safe":
+            final_score -= 2
 
+    db_content.auto_review_score = final_score
     db_content.auto_review_result = final_result
     db_content.auto_review_reason = final_reason
     if final_result == "auto_pass":
