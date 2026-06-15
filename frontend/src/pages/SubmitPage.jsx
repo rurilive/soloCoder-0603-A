@@ -1,0 +1,121 @@
+import React, { useState } from 'react';
+import { Form, Input, Button, Card, Result, Spin, Tag, Space } from 'antd';
+import { SendOutlined } from '@ant-design/icons';
+import { contentAPI } from '../services/api';
+
+const { TextArea } = Input;
+
+function SubmitPage() {
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const onFinish = async (values) => {
+    setLoading(true);
+    try {
+      const res = await contentAPI.submit(values);
+      setResult(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getResultStatus = (status) => {
+    switch (status) {
+      case 'approved':
+        return 'success';
+      case 'rejected':
+        return 'error';
+      default:
+        return 'info';
+    }
+  };
+
+  const getResultTitle = (data) => {
+    if (data.status === 'approved') {
+      return '自动审核通过，内容已发布';
+    } else if (data.status === 'rejected') {
+      return '自动审核拒绝';
+    } else {
+      return '已进入人工审核队列';
+    }
+  };
+
+  const getResultSubTitle = (data) => {
+    return (
+      <Space direction="vertical" size="small">
+        <div>
+          <span style={{ marginRight: 16 }}>风险分: <Tag color={data.auto_review_score > 0 ? 'orange' : 'green'}>{data.auto_review_score}</Tag></span>
+          <span>内容ID: {data.id}</span>
+        </div>
+        {data.auto_review_reason && (
+          <div style={{ color: '#666' }}>
+            审核原因: {data.auto_review_reason}
+          </div>
+        )}
+      </Space>
+    );
+  };
+
+  const handleReset = () => {
+    form.resetFields();
+    setResult(null);
+  };
+
+  if (result) {
+    return (
+      <div style={{ maxWidth: 600, margin: '0 auto' }}>
+        <Result
+          status={getResultStatus(result.status)}
+          title={getResultTitle(result)}
+          subTitle={getResultSubTitle(result)}
+          extra={[
+            <Button type="primary" onClick={handleReset}>
+              继续提交
+            </Button>
+          ]}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 600, margin: '0 auto' }}>
+      <Card title="提交待审核内容">
+        <Spin spinning={loading}>
+          <Form form={form} layout="vertical" onFinish={onFinish}>
+            <Form.Item
+              name="title"
+              label="标题"
+              rules={[{ required: true, message: '请输入标题' }]}
+            >
+              <Input placeholder="请输入内容标题" size="large" />
+            </Form.Item>
+            <Form.Item
+              name="body"
+              label="内容正文"
+              rules={[{ required: true, message: '请输入内容正文' }]}
+            >
+              <TextArea rows={8} placeholder="请输入内容正文" />
+            </Form.Item>
+            <Form.Item name="author" label="作者">
+              <Input placeholder="请输入作者（可选）" />
+            </Form.Item>
+            <Form.Item name="source" label="来源">
+              <Input placeholder="请输入来源（可选）" />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" size="large" icon={<SendOutlined />}>
+                提交审核
+              </Button>
+            </Form.Item>
+          </Form>
+        </Spin>
+      </Card>
+    </div>
+  );
+}
+
+export default SubmitPage;
