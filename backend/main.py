@@ -9,9 +9,11 @@ from database import engine, get_db, Base
 from models import Content, ReviewLog, AutoReviewRule
 from schemas import (
     ContentSubmit, ContentResponse, ReviewAction, ReviewLogResponse,
-    AutoReviewRuleCreate, AutoReviewRuleResponse, AutoReviewResult
+    AutoReviewRuleCreate, AutoReviewRuleResponse, AutoReviewResult,
+    ImageReviewResult
 )
 from auto_moderation import AutoModerationEngine, init_default_rules
+from image_moderation import image_service
 from websocket_manager import manager
 
 Base.metadata.create_all(bind=engine)
@@ -39,6 +41,7 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
     db_content = Content(
         title=content.title,
         body=content.body,
+        image_url=content.image_url,
         author=content.author,
         source=content.source,
         status="pending",
@@ -47,14 +50,33 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
     db.add(db_content)
     db.flush()
 
-    engine = AutoModerationEngine(db)
-    result = engine.review(content.title, content.body)
+    img_result = image_service.review(content.image_url)
+    if img_result:
+        db_content.image_review_result = img_result.result
+        db_content.image_review_confidence = img_result.confidence
 
-    db_content.auto_review_result = result.result
-    db_content.auto_review_score = result.score
-    db_content.auto_review_reason = result.reason
+    text_engine = AutoModerationEngine(db)
+    text_result = text_engine.review(content.title, content.body)
 
-    if result.result == "auto_pass":
+    db_content.auto_review_result = text_result.result
+    db_content.auto_review_score = text_result.score
+    db_content.auto_review_reason = text_result.reason
+
+    final_result = text_result.result
+    final_reason = text_result.reason
+
+    if img_result:
+        if img_result.result == "unsafe":
+            final_result = "auto_reject"
+            final_reason = f"图片审核不通过: {img_result.reason}; 文字审核: {final_reason}"
+        elif img_result.result == "uncertain" and final_result == "auto_pass":
+            final_result = "manual"
+            final_reason = f"图片审核不确定需人工: {img_result.reason}; 文字审核: {final_reason}"
+        elif img_result.result == "uncertain" and final_result == "manual":
+            final_reason = f"图片审核不确定需人工: {img_result.reason}; 文字审核: {final_reason}"
+
+    db_content.auto_review_reason = final_reason
+    if final_result == "auto_pass":
         db_content.status = "approved"
         db_content.reviewed_at = datetime.utcnow()
         db_content.reviewed_by = "auto"
@@ -62,11 +84,11 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
             content_id=db_content.id,
             action="auto_approve",
             reviewer="auto",
-            note=f"自动审核通过: {result.reason}",
+            note=f"自动审核通过: {final_reason}",
             tags=[]
         )
         db.add(log)
-    elif result.result == "auto_reject":
+    elif final_result == "auto_reject":
         db_content.status = "rejected"
         db_content.reviewed_at = datetime.utcnow()
         db_content.reviewed_by = "auto"
@@ -74,7 +96,7 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
             content_id=db_content.id,
             action="auto_reject",
             reviewer="auto",
-            note=f"自动审核拒绝: {result.reason}",
+            note=f"自动审核拒绝: {final_reason}",
             tags=[]
         )
         db.add(log)

@@ -6,6 +6,7 @@ from datetime import datetime
 class ContentSubmit(BaseModel):
     title: str
     body: str
+    image_url: Optional[str] = None
     author: Optional[str] = None
     source: Optional[str] = None
 
@@ -14,6 +15,9 @@ class ContentResponse(BaseModel):
     id: int
     title: str
     body: str
+    image_url: Optional[str]
+    image_review_result: Optional[str]
+    image_review_confidence: Optional[int]
     author: Optional[str]
     status: str
     source: Optional[str]
@@ -28,6 +32,12 @@ class ContentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ImageReviewResult(BaseModel):
+    result: str
+    confidence: int
+    reason: str
 
 
 class ReviewAction(BaseModel):

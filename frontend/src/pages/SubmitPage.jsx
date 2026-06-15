@@ -43,13 +43,26 @@ function SubmitPage() {
     }
   };
 
+  const getImageReviewTag = (result) => {
+    if (!result) return null;
+    const colors = { safe: 'green', unsafe: 'red', uncertain: 'orange' };
+    const texts = { safe: '图片正常', unsafe: '图片违规', uncertain: '图片需人工' };
+    return <Tag color={colors[result]}>{texts[result]}</Tag>;
+  };
+
   const getResultSubTitle = (data) => {
     return (
       <Space direction="vertical" size="small">
         <div>
           <span style={{ marginRight: 16 }}>风险分: <Tag color={data.auto_review_score > 0 ? 'orange' : 'green'}>{data.auto_review_score}</Tag></span>
           <span>内容ID: {data.id}</span>
+          {data.image_review_result && getImageReviewTag(data.image_review_result)}
         </div>
+        {data.image_url && (
+          <div>
+            <img src={data.image_url} alt="提交的图片" style={{ maxWidth: 200, maxHeight: 200, borderRadius: 4 }} />
+          </div>
+        )}
         {data.auto_review_reason && (
           <div style={{ color: '#666' }}>
             审核原因: {data.auto_review_reason}
@@ -99,6 +112,13 @@ function SubmitPage() {
               rules={[{ required: true, message: '请输入内容正文' }]}
             >
               <TextArea rows={8} placeholder="请输入内容正文" />
+            </Form.Item>
+            <Form.Item
+              name="image_url"
+              label="图片URL"
+              extra="支持https://图片链接，将自动进行鉴黄审核"
+            >
+              <Input placeholder="请输入图片URL（可选）" />
             </Form.Item>
             <Form.Item name="author" label="作者">
               <Input placeholder="请输入作者（可选）" />

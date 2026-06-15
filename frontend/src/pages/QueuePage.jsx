@@ -61,11 +61,14 @@ function QueuePage() {
     let color = 'default';
     if (score > 0) color = 'orange';
     return (
-      <Space size="small">
+      <Space size="small" wrap>
         <Tag color={color}>
           风险分: {score}
         </Tag>
         {record.auto_review_result === 'manual' && <Tag color="blue">需人工审核</Tag>}
+        {record.image_review_result === 'unsafe' && <Tag color="red">图片违规</Tag>}
+        {record.image_review_result === 'uncertain' && <Tag color="orange">图片需人工</Tag>}
+        {record.image_review_result === 'safe' && <Tag color="green">图片正常</Tag>}
       </Space>
     );
   };
@@ -81,7 +84,10 @@ function QueuePage() {
       dataIndex: 'title',
       ellipsis: true,
       render: (text, record) => (
-        <a onClick={() => navigate(`/content/${record.id}`)}>{text}</a>
+        <Space>
+          {record.image_url && <span>🖼️</span>}
+          <a onClick={() => navigate(`/content/${record.id}`)}>{text}</a>
+        </Space>
       )
     },
     {

@@ -118,6 +118,17 @@ function ContentDetail() {
     return 'default';
   };
 
+  const getImageReviewTag = (result, confidence) => {
+    if (!result) return null;
+    const colors = { safe: 'green', unsafe: 'red', uncertain: 'orange' };
+    const texts = { safe: '图片正常', unsafe: '图片违规', uncertain: '图片需人工' };
+    return (
+      <Tag color={colors[result]}>
+        {texts[result]} ({confidence}%)
+      </Tag>
+    );
+  };
+
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" /></div>;
   }
@@ -141,9 +152,41 @@ function ContentDetail() {
           <Tag color={getScoreColor(content.auto_review_score)}>
             风险分: {content.auto_review_score}
           </Tag>
+          {content.image_review_result && getImageReviewTag(content.image_review_result, content.image_review_confidence)}
         </Space>
 
         <Title level={3} style={{ marginTop: 0 }}>{content.title}</Title>
+
+        {content.image_url && (
+          <div style={{ marginBottom: 24, textAlign: 'center' }}>
+            <img
+              src={content.image_url}
+              alt="内容图片"
+              style={{
+                maxWidth: '100%',
+                maxHeight: 400,
+                borderRadius: 8,
+                border: content.image_review_result === 'unsafe' ? '3px solid #ff4d4f' :
+                        content.image_review_result === 'uncertain' ? '3px solid #faad14' : 'none'
+              }}
+            />
+            {content.image_review_result && (
+              <div style={{ marginTop: 8 }}>
+                <Alert
+                  message={
+                    content.image_review_result === 'safe' ? '图片审核通过' :
+                    content.image_review_result === 'unsafe' ? '图片审核不通过' : '图片需人工审核确认'
+                  }
+                  type={
+                    content.image_review_result === 'safe' ? 'success' :
+                    content.image_review_result === 'unsafe' ? 'error' : 'warning'
+                  }
+                  showIcon
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <Descriptions column={2} style={{ marginBottom: 24 }}>
           <Descriptions.Item label="ID">{content.id}</Descriptions.Item>
@@ -152,6 +195,11 @@ function ContentDetail() {
           <Descriptions.Item label="提交时间">
             {dayjs(content.created_at).format('YYYY-MM-DD HH:mm:ss')}
           </Descriptions.Item>
+          {content.image_url && (
+            <Descriptions.Item label="图片链接" span={2}>
+              <a href={content.image_url} target="_blank" rel="noopener noreferrer">{content.image_url}</a>
+            </Descriptions.Item>
+          )}
           {content.reviewed_at && (
             <>
               <Descriptions.Item label="审核人">{content.reviewed_by || '-'}</Descriptions.Item>

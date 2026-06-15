@@ -44,12 +44,17 @@ class AutoModerationEngine:
         )
 
     def _match_rule(self, rule: AutoReviewRule, content: str) -> bool:
-        if rule.rule_type == "keyword":
-            pattern = re.compile(rule.pattern, re.IGNORECASE)
-            return bool(pattern.search(content))
-        elif rule.rule_type == "regex":
-            pattern = re.compile(rule.pattern)
-            return bool(pattern.search(content))
+        if rule.rule_type in ["keyword", "regex"]:
+            pattern_str = rule.pattern.strip().strip("|")
+            if not pattern_str:
+                return False
+            try:
+                flags = re.IGNORECASE if rule.rule_type == "keyword" else 0
+                pattern = re.compile(pattern_str, flags)
+                match = pattern.search(content)
+                return bool(match) and bool(match.group(0))
+            except re.error:
+                return False
         elif rule.rule_type == "length_min":
             try:
                 min_len = int(rule.pattern)
@@ -65,7 +70,21 @@ class AutoModerationEngine:
         return False
 
 
+def fix_existing_rules(db: Session):
+    rules = db.query(AutoReviewRule).filter(
+        AutoReviewRule.rule_type.in_(["keyword", "regex"]),
+        AutoReviewRule.pattern.like("%|")
+    ).all()
+    for rule in rules:
+        cleaned = rule.pattern.strip().strip("|")
+        if cleaned != rule.pattern:
+            rule.pattern = cleaned
+    db.commit()
+
+
 def init_default_rules(db: Session):
+    fix_existing_rules(db)
+
     existing = db.query(AutoReviewRule).first()
     if existing:
         return
@@ -110,7 +129,7 @@ def init_default_rules(db: Session):
         AutoReviewRule(
             name="安全词-正常词汇",
             rule_type="keyword",
-            pattern="你好|谢谢|分享|学习|交流|讨论|推荐|",
+            pattern="你好|谢谢|分享|学习|交流|讨论|推荐",
             action="pass",
             score=-2,
             enabled=True,
