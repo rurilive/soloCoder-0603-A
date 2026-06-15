@@ -58,9 +58,12 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
     text_engine = AutoModerationEngine(db)
     text_result = text_engine.review(content.title, content.body)
 
+    PASS_THRESHOLD = -5
+    REJECT_THRESHOLD = 5
+
     final_score = text_result.score
-    final_result = text_result.result
     final_reason = text_result.reason
+    force_reject = False
 
     if img_result:
         img_desc = {
@@ -71,14 +74,21 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
         final_reason = f"{img_desc[img_result.result]}: {img_result.reason}; 文字审核: {final_reason}"
 
         if img_result.result == "unsafe":
-            final_result = "auto_reject"
+            force_reject = True
             final_score += 10
         elif img_result.result == "uncertain":
             final_score += 3
-            if final_result == "auto_pass":
-                final_result = "manual"
         elif img_result.result == "safe":
             final_score -= 2
+
+    if force_reject:
+        final_result = "auto_reject"
+    elif final_score <= PASS_THRESHOLD:
+        final_result = "auto_pass"
+    elif final_score >= REJECT_THRESHOLD:
+        final_result = "auto_reject"
+    else:
+        final_result = "manual"
 
     db_content.auto_review_score = final_score
     db_content.auto_review_result = final_result
