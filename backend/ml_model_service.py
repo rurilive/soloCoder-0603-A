@@ -28,6 +28,8 @@ class ReviewResponse(BaseModel):
     detected_topics: List[str]
     processing_time_ms: int
 
+    model_config = {"protected_namespaces": ()}
+
 
 SENSITIVE_KEYWORDS = {
     "ad": ["加微信", "加好友", "联系电话", "扫码关注", "赚钱", "兼职", "推广", "广告", "点击链接", "优惠活动"],

@@ -3,7 +3,7 @@ import { Table, Tag, Button, Space, Modal, Form, Input, Select, message, Empty }
 import { EyeOutlined, CheckOutlined, CloseOutlined, TagOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { contentAPI } from '../services/api';
+import { contentAPI, mlThresholdAPI } from '../services/api';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -15,6 +15,7 @@ function QueuePage() {
   const [reviewModal, setReviewModal] = useState({ visible: false, content: null });
   const [form] = Form.useForm();
   const [selectedTags, setSelectedTags] = useState([]);
+  const [thresholds, setThresholds] = useState({ pass_threshold: 0.3, reject_threshold: 0.7 });
 
   const fetchContents = async () => {
     setLoading(true);
@@ -28,8 +29,18 @@ function QueuePage() {
     }
   };
 
+  const fetchThresholds = async () => {
+    try {
+      const res = await mlThresholdAPI.active();
+      setThresholds(res.data);
+    } catch (err) {
+      // 用默认值
+    }
+  };
+
   useEffect(() => {
     fetchContents();
+    fetchThresholds();
     const interval = setInterval(fetchContents, 10000);
     return () => clearInterval(interval);
   }, []);
@@ -57,13 +68,17 @@ function QueuePage() {
   };
 
   const getAutoReviewInfo = (record) => {
-    const score = record.auto_review_score;
+    const score = record.combined_score;
     let color = 'default';
-    if (score > 0) color = 'orange';
+    if (score != null) {
+      if (score <= thresholds.pass_threshold) color = 'green';
+      else if (score >= thresholds.reject_threshold) color = 'red';
+      else color = 'orange';
+    }
     return (
       <Space size="small" wrap>
         <Tag color={color}>
-          风险分: {score}
+          综合分: {score != null ? `${(score * 100).toFixed(1)}%` : '-'}
         </Tag>
         {record.auto_review_result === 'manual' && <Tag color="blue">需人工审核</Tag>}
         {record.image_review_result === 'unsafe' && <Tag color="red">图片违规</Tag>}

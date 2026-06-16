@@ -21,6 +21,7 @@ class Content(Base):
     auto_review_result = Column(String(50))
     auto_review_score = Column(Integer)
     auto_review_reason = Column(Text)
+    combined_score = Column(Float)
     ml_score = Column(Float)
     ml_confidence = Column(Float)
     ml_result = Column(String(50))

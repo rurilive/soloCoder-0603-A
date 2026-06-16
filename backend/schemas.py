@@ -25,6 +25,7 @@ class ContentResponse(BaseModel):
     created_at: datetime
     auto_review_result: Optional[str]
     auto_review_score: Optional[int]
+    combined_score: Optional[float]
     auto_review_reason: Optional[str]
     ml_score: Optional[float]
     ml_confidence: Optional[float]
@@ -35,8 +36,7 @@ class ContentResponse(BaseModel):
     reviewed_by: Optional[str]
     review_note: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = {"protected_namespaces": (), "from_attributes": True}
 
 
 class ImageReviewResult(BaseModel):
@@ -111,6 +111,8 @@ class MLReviewResult(BaseModel):
     detected_topics: List[str]
     processing_time_ms: int
 
+    model_config = {"protected_namespaces": ()}
+
 
 class MLThresholdConfigCreate(BaseModel):
     name: str
@@ -161,8 +163,7 @@ class MLReviewRecordResponse(BaseModel):
     threshold_reject: Optional[float]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"protected_namespaces": (), "from_attributes": True}
 
 
 class SampleReviewAction(BaseModel):

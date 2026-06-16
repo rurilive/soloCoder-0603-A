@@ -345,6 +345,7 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
 
     final_score_int = int(round((final_score - 0.5) * 40))
 
+    db_content.combined_score = final_score
     db_content.auto_review_score = final_score_int
     db_content.auto_review_result = final_result
     db_content.auto_review_reason = final_reason

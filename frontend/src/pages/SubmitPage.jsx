@@ -51,10 +51,17 @@ function SubmitPage() {
   };
 
   const getResultSubTitle = (data) => {
+    const score = data.combined_score;
+    let scoreColor = 'default';
+    if (score != null) {
+      if (score <= 0.3) scoreColor = 'green';
+      else if (score >= 0.7) scoreColor = 'red';
+      else scoreColor = 'orange';
+    }
     return (
       <Space direction="vertical" size="small">
         <div>
-          <span style={{ marginRight: 16 }}>风险分: <Tag color={data.auto_review_score > 0 ? 'orange' : 'green'}>{data.auto_review_score}</Tag></span>
+          <span style={{ marginRight: 16 }}>综合风险分: <Tag color={scoreColor}>{score != null ? `${(score * 100).toFixed(1)}%` : '-'}</Tag></span>
           <span>内容ID: {data.id}</span>
           {data.image_review_result && getImageReviewTag(data.image_review_result)}
         </div>

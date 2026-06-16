@@ -28,7 +28,7 @@ import {
 } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { contentAPI } from '../services/api';
+import { contentAPI, mlThresholdAPI } from '../services/api';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -43,16 +43,21 @@ function ContentDetail() {
   const [reviewModal, setReviewModal] = useState({ visible: false, action: null });
   const [form] = Form.useForm();
   const [selectedTags, setSelectedTags] = useState([]);
+  const [thresholds, setThresholds] = useState({ pass_threshold: 0.3, reject_threshold: 0.7 });
 
   const fetchDetail = async () => {
     setLoading(true);
     try {
-      const [contentRes, logsRes] = await Promise.all([
+      const [contentRes, logsRes, thRes] = await Promise.all([
         contentAPI.get(id),
-        contentAPI.logs(id)
+        contentAPI.logs(id),
+        mlThresholdAPI.active().catch(() => ({ data: { pass_threshold: 0.3, reject_threshold: 0.7 } }))
       ]);
       setContent(contentRes.data);
       setLogs(logsRes.data);
+      if (thRes && thRes.data) {
+        setThresholds(thRes.data);
+      }
     } catch (err) {
       message.error('获取内容详情失败');
     } finally {
@@ -116,9 +121,10 @@ function ContentDetail() {
   };
 
   const getScoreColor = (score) => {
-    if (score > 0) return 'orange';
-    if (score < 0) return 'green';
-    return 'default';
+    if (score == null) return 'default';
+    if (score <= thresholds.pass_threshold) return 'green';
+    if (score >= thresholds.reject_threshold) return 'red';
+    return 'orange';
   };
 
   const getMLResultTag = (result) => {
@@ -169,8 +175,8 @@ function ContentDetail() {
         <Space style={{ marginBottom: 16 }} wrap>
           {getStatusTag(content.status)}
           {getAutoReviewTag(content.auto_review_result)}
-          <Tag color={getScoreColor(content.auto_review_score)}>
-            综合风险分: {content.auto_review_score}
+          <Tag color={getScoreColor(content.combined_score)}>
+            综合风险分: {(content.combined_score * 100).toFixed(1)}%
           </Tag>
           {getMLResultTag(content.ml_result)}
           {content.ml_score != null && (
