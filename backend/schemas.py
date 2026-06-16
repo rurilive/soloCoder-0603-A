@@ -61,8 +61,7 @@ class ReviewLogResponse(BaseModel):
     tags: List[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AutoReviewRuleCreate(BaseModel):
@@ -86,8 +85,7 @@ class AutoReviewRuleResponse(BaseModel):
     description: Optional[str]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AutoReviewResult(BaseModel):
@@ -145,8 +143,7 @@ class MLThresholdConfigResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class MLReviewRecordResponse(BaseModel):
@@ -188,8 +185,7 @@ class SampleReviewResponse(BaseModel):
     reviewed_at: Optional[datetime]
     content: Optional[ContentResponse] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SampleBatchResponse(BaseModel):
@@ -205,8 +201,7 @@ class SampleBatchResponse(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SampleRequest(BaseModel):

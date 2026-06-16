@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Card, Result, Spin, Tag, Space } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
-import { contentAPI } from '../services/api';
+import { contentAPI, mlThresholdAPI } from '../services/api';
 
 const { TextArea } = Input;
 
@@ -9,6 +9,20 @@ function SubmitPage() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [thresholds, setThresholds] = useState({ pass_threshold: 0.3, reject_threshold: 0.7 });
+
+  const fetchThresholds = async () => {
+    try {
+      const res = await mlThresholdAPI.active();
+      setThresholds(res.data);
+    } catch (err) {
+      // 保持默认值
+    }
+  };
+
+  useEffect(() => {
+    fetchThresholds();
+  }, []);
 
   const onFinish = async (values) => {
     setLoading(true);
@@ -54,8 +68,8 @@ function SubmitPage() {
     const score = data.combined_score;
     let scoreColor = 'default';
     if (score != null) {
-      if (score <= 0.3) scoreColor = 'green';
-      else if (score >= 0.7) scoreColor = 'red';
+      if (score <= thresholds.pass_threshold) scoreColor = 'green';
+      else if (score >= thresholds.reject_threshold) scoreColor = 'red';
       else scoreColor = 'orange';
     }
     return (
