@@ -367,7 +367,11 @@ def update_sample_batch_stats(db: Session, batch_id: str):
 
 
 @app.post("/api/contents", response_model=ContentResponse, tags=["内容"])
-async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
+async def submit_content(
+    content: ContentSubmit,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     db_content = Content(
         title=content.title,
         body=content.body,
@@ -536,15 +540,23 @@ def get_contents(
         if unassigned_only:
             query = query.filter(Content.assigned_to == None)
     else:
-        query = query.filter(Content.assigned_to == current_user.username)
+        query = query.filter(
+            (Content.assigned_to == current_user.username) | (Content.assigned_to == None)
+        )
     return query.order_by(Content.created_at.desc()).offset(skip).limit(limit).all()
 
 
 @app.get("/api/contents/{content_id}", response_model=ContentResponse, tags=["内容"])
-def get_content(content_id: int, db: Session = Depends(get_db)):
+def get_content(
+    content_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="内容不存在")
+    if current_user.role != "admin" and content.assigned_to is not None and content.assigned_to != current_user.username:
+        raise HTTPException(status_code=403, detail="无权查看该内容")
     return content
 
 

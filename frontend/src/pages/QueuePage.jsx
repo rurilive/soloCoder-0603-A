@@ -126,7 +126,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'j' || e.key === 'J') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'j' || e.key === 'J')) {
         e.preventDefault();
         if (contents.length > 0) {
           const currentIdx = contents.findIndex(c => c.id === selectedRowKeys[selectedRowKeys.length - 1]);
@@ -143,7 +143,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'k' || e.key === 'K') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         if (contents.length > 0) {
           const currentIdx = contents.findIndex(c => c.id === selectedRowKeys[selectedRowKeys.length - 1]);
@@ -160,7 +160,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'a' || e.key === 'A') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         if (selectedRowKeys.length === 1) {
           const content = contents.find(c => c.id === selectedRowKeys[0]);
@@ -169,7 +169,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 's' || e.key === 'S') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         if (selectedRowKeys.length === 1) {
           const content = contents.find(c => c.id === selectedRowKeys[0]);
@@ -178,7 +178,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'd' || e.key === 'D') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();
         if (selectedRowKeys.length === 1) {
           const content = contents.find(c => c.id === selectedRowKeys[0]);
@@ -187,7 +187,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'v' || e.key === 'V') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
         e.preventDefault();
         if (selectedRowKeys.length === 1) {
           navigate(`/content/${selectedRowKeys[0]}`);
@@ -195,7 +195,7 @@ function QueuePage() {
         return;
       }
 
-      if (e.key === 'r' || e.key === 'R') {
+      if (!(e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
         fetchContents();
         return;
