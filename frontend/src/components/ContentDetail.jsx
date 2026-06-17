@@ -41,6 +41,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { contentAPI, mlThresholdAPI, versionAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -195,6 +196,7 @@ function DiffView({ diffs }) {
 function ContentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [content, setContent] = useState(null);
   const [logs, setLogs] = useState([]);
   const [versions, setVersions] = useState([]);
@@ -220,7 +222,7 @@ function ContentDetail() {
         mlThresholdAPI.active().catch(() => ({ data: { pass_threshold: 0.3, reject_threshold: 0.7 } }))
       ]);
       let contentData = contentRes.data;
-      if (contentData.status === 'pending' && !contentData.review_started_at) {
+      if (!isAdmin && contentData.status === 'pending' && !contentData.review_started_at) {
         try {
           const startRes = await contentAPI.startReview(id);
           contentData = startRes.data;

@@ -745,6 +745,8 @@ def start_review(
     if current_user.role != "admin":
         if content.assigned_to is not None and content.assigned_to != current_user.username:
             raise HTTPException(status_code=403, detail="无权审核该内容")
+    else:
+        return content
 
     if not content.review_started_at:
         content.review_started_at = datetime.utcnow()
