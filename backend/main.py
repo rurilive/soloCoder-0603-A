@@ -538,10 +538,10 @@ def get_contents(
         if reviewer:
             query = query.filter(Content.reviewed_by == reviewer)
         if unassigned_only:
-            query = query.filter(Content.assigned_to == None)
+            query = query.filter(Content.assigned_to.is_(None))
     else:
         query = query.filter(
-            (Content.assigned_to == current_user.username) | (Content.assigned_to == None)
+            (Content.assigned_to == current_user.username) | (Content.assigned_to.is_(None))
         )
     return query.order_by(Content.created_at.desc()).offset(skip).limit(limit).all()
 
@@ -555,8 +555,11 @@ def get_content(
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="内容不存在")
-    if current_user.role != "admin" and content.assigned_to is not None and content.assigned_to != current_user.username:
-        raise HTTPException(status_code=403, detail="无权查看该内容")
+    if current_user.role != "admin":
+        if content.status != "pending":
+            raise HTTPException(status_code=403, detail="无权查看该内容")
+        if content.assigned_to is not None and content.assigned_to != current_user.username:
+            raise HTTPException(status_code=403, detail="无权查看该内容")
     return content
 
 
