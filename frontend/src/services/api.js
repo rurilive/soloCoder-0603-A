@@ -40,6 +40,7 @@ export const contentAPI = {
   submit: (data) => api.post('/contents', data),
   list: (params) => api.get('/contents', { params }),
   get: (id) => api.get(`/contents/${id}`),
+  startReview: (id) => api.post(`/contents/${id}/start-review`),
   review: (id, data) => api.post(`/contents/${id}/review`, data),
   logs: (id) => api.get(`/contents/${id}/logs`),
   mlRecord: (id) => api.get(`/contents/${id}/ml-record`),

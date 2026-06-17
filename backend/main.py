@@ -728,8 +728,25 @@ def get_content(
             raise HTTPException(status_code=403, detail="无权查看该内容")
         if content.assigned_to is not None and content.assigned_to != current_user.username:
             raise HTTPException(status_code=403, detail="无权查看该内容")
+    return content
 
-    if current_user.role != "admin" and content.status == "pending" and not content.review_started_at:
+
+@app.post("/api/contents/{content_id}/start-review", response_model=ContentResponse, tags=["审核"])
+def start_review(
+    content_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        raise HTTPException(status_code=404, detail="内容不存在")
+    if content.status != "pending":
+        raise HTTPException(status_code=400, detail="只有待审核内容可以开始审核")
+    if current_user.role != "admin":
+        if content.assigned_to is not None and content.assigned_to != current_user.username:
+            raise HTTPException(status_code=403, detail="无权审核该内容")
+
+    if not content.review_started_at:
         content.review_started_at = datetime.utcnow()
         db.commit()
         db.refresh(content)
@@ -1374,7 +1391,7 @@ def get_content_versions(
     ).order_by(ContentVersion.version_number.desc()).all()
 
     current_version = ContentVersionResponse(
-        id=0,
+        id=-1,
         content_id=content.id,
         version_number=content.version or 1,
         title=content.title,
@@ -1384,7 +1401,7 @@ def get_content_versions(
         source=content.source,
         change_summary="当前版本",
         modified_by="system",
-        created_at=content.reviewed_at or content.created_at
+        created_at=content.created_at
     )
 
     result = [current_version] + versions
@@ -1408,7 +1425,7 @@ def get_content_version(
     if not version:
         if (content.version or 1) == version_number:
             return ContentVersionResponse(
-                id=0,
+                id=-1,
                 content_id=content.id,
                 version_number=content.version or 1,
                 title=content.title,
@@ -1418,7 +1435,7 @@ def get_content_version(
                 source=content.source,
                 change_summary="当前版本",
                 modified_by="system",
-                created_at=content.reviewed_at or content.created_at
+                created_at=content.created_at
             )
         else:
             raise HTTPException(status_code=404, detail="版本不存在")

@@ -219,7 +219,16 @@ function ContentDetail() {
         contentAPI.logs(id),
         mlThresholdAPI.active().catch(() => ({ data: { pass_threshold: 0.3, reject_threshold: 0.7 } }))
       ]);
-      setContent(contentRes.data);
+      let contentData = contentRes.data;
+      if (contentData.status === 'pending' && !contentData.review_started_at) {
+        try {
+          const startRes = await contentAPI.startReview(id);
+          contentData = startRes.data;
+        } catch (startErr) {
+          console.warn('开始审核失败:', startErr);
+        }
+      }
+      setContent(contentData);
       setLogs(logsRes.data);
       if (thRes && thRes.data) {
         setThresholds(thRes.data);
