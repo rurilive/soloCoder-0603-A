@@ -98,4 +98,17 @@ export const samplingAPI = {
   review: (reviewId, data) => api.post(`/sampling/reviews/${reviewId}`, data)
 };
 
+export const performanceAPI = {
+  getReviewerPerformance: (startDate, endDate) =>
+    api.get('/reviewers/performance', { params: { start_date: startDate, end_date: endDate } })
+};
+
+export const versionAPI = {
+  listVersions: (contentId) => api.get(`/contents/${contentId}/versions`),
+  getVersion: (contentId, versionNumber) => api.get(`/contents/${contentId}/versions/${versionNumber}`),
+  getDiff: (contentId, oldVersion, newVersion) =>
+    api.get(`/contents/${contentId}/diff`, { params: { old_version: oldVersion, new_version: newVersion } }),
+  resubmit: (contentId, data) => api.post(`/contents/${contentId}/resubmit`, data)
+};
+
 export default api;

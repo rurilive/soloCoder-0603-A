@@ -14,7 +14,8 @@ import {
   AuditOutlined,
   UserOutlined,
   LogoutOutlined,
-  SafetyCertificateOutlined
+  SafetyCertificateOutlined,
+  TrophyOutlined
 } from '@ant-design/icons';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -26,6 +27,7 @@ import SubmitPage from './pages/SubmitPage';
 import DashboardPage from './pages/DashboardPage';
 import MLThresholdPage from './pages/MLThresholdPage';
 import SampleReviewPage from './pages/SampleReviewPage';
+import ReviewerPerformancePage from './pages/ReviewerPerformancePage';
 import ContentDetail from './components/ContentDetail';
 import { statsAPI, samplingAPI } from './services/api';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -239,7 +241,12 @@ function AppContent() {
           )}
         </span>
       )
-    }
+    },
+    ...(isAdmin ? [{
+      key: '/performance',
+      icon: <TrophyOutlined />,
+      label: '审核员绩效'
+    }] : [])
   ];
 
   return (
@@ -306,6 +313,7 @@ function AppContent() {
             <Route path="/submit" element={<SubmitPage />} />
             <Route path="/ml-threshold" element={<MLThresholdPage />} />
             <Route path="/sample-review" element={<SampleReviewPage />} />
+            <Route path="/performance" element={<ReviewerPerformancePage />} />
             <Route path="/content/:id" element={<ContentDetail />} />
           </Routes>
         </Content>

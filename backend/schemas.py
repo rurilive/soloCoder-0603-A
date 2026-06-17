@@ -38,6 +38,9 @@ class ContentResponse(BaseModel):
     assigned_to: Optional[str]
     assigned_at: Optional[datetime]
     assigned_by: Optional[str]
+    review_duration_seconds: Optional[int]
+    version: Optional[int] = 1
+    original_content_id: Optional[int]
 
     model_config = {"protected_namespaces": (), "from_attributes": True}
 
@@ -265,3 +268,64 @@ class ReviewerStats(BaseModel):
     display_name: Optional[str]
     pending_count: int
     total_reviewed: int
+
+
+class ReviewerPerformance(BaseModel):
+    username: str
+    display_name: Optional[str]
+    total_reviewed: int
+    approved_count: int
+    rejected_count: int
+    accuracy_rate: Optional[float]
+    inconsistent_count: int
+    sampled_count: int
+    avg_review_seconds: Optional[float]
+    total_review_seconds: Optional[int]
+    resubmit_processed: int
+
+
+class ReviewerPerformanceList(BaseModel):
+    period_start: Optional[datetime]
+    period_end: Optional[datetime]
+    reviewers: List[ReviewerPerformance]
+
+
+class ContentVersionResponse(BaseModel):
+    id: int
+    content_id: int
+    version_number: int
+    title: str
+    body: str
+    image_url: Optional[str]
+    author: Optional[str]
+    source: Optional[str]
+    change_summary: Optional[str]
+    modified_by: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ContentResubmitRequest(BaseModel):
+    content_id: int
+    title: str
+    body: str
+    image_url: Optional[str] = None
+    author: Optional[str] = None
+    source: Optional[str] = None
+    change_summary: Optional[str] = None
+    modified_by: Optional[str] = "system"
+
+
+class DiffSegment(BaseModel):
+    field: str
+    type: str
+    old_value: Optional[str]
+    new_value: Optional[str]
+
+
+class ContentDiffResponse(BaseModel):
+    content_id: int
+    old_version: int
+    new_version: int
+    diffs: List[DiffSegment]

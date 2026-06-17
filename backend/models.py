@@ -45,10 +45,14 @@ class Content(Base):
     reviewed_at = Column(DateTime)
     reviewed_by = Column(String(100))
     review_note = Column(Text)
+    review_duration_seconds = Column(Integer)
+    version = Column(Integer, default=1)
+    original_content_id = Column(Integer, ForeignKey("contents.id"))
 
     reviews = relationship("ReviewLog", back_populates="content", cascade="all, delete-orphan")
     ml_reviews = relationship("MLReviewRecord", back_populates="content", cascade="all, delete-orphan")
     sample_reviews = relationship("SampleReview", back_populates="content", cascade="all, delete-orphan")
+    versions = relationship("ContentVersion", back_populates="content", cascade="all, delete-orphan")
 
 
 class ReviewLog(Base):
@@ -147,3 +151,21 @@ class SampleBatch(Base):
     consistency_rate = Column(Float)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime)
+
+
+class ContentVersion(Base):
+    __tablename__ = "content_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_id = Column(Integer, ForeignKey("contents.id"))
+    version_number = Column(Integer, default=1)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=False)
+    image_url = Column(String(500))
+    author = Column(String(100))
+    source = Column(String(100))
+    change_summary = Column(String(500))
+    modified_by = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    content = relationship("Content", back_populates="versions")

@@ -14,7 +14,8 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from database import engine, get_db, Base
 from models import (
     Content, ReviewLog, AutoReviewRule,
-    MLThresholdConfig, MLReviewRecord, SampleReview, SampleBatch, User
+    MLThresholdConfig, MLReviewRecord, SampleReview, SampleBatch, User,
+    ContentVersion
 )
 from schemas import (
     ContentSubmit, ContentResponse, ReviewAction, ReviewLogResponse,
@@ -25,7 +26,10 @@ from schemas import (
     SampleBatchResponse, SampleRequest,
     BatchReviewRequest, BatchReviewResult,
     AssignTaskRequest, AssignTaskResult,
-    UserLogin, UserResponse, LoginResponse, ReviewerStats
+    UserLogin, UserResponse, LoginResponse, ReviewerStats,
+    ReviewerPerformance, ReviewerPerformanceList,
+    ContentVersionResponse, ContentResubmitRequest,
+    ContentDiffResponse, DiffSegment
 )
 
 SECRET_KEY = "moderation-secret-key-2024"
@@ -224,12 +228,170 @@ def migrate_add_assigned_columns(db: Session):
         pass
 
 
+def migrate_add_review_quality_columns(db: Session):
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN review_duration_seconds INTEGER"))
+        db.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN version INTEGER DEFAULT 1"))
+        db.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN original_content_id INTEGER REFERENCES contents(id)"))
+        db.commit()
+    except Exception:
+        pass
+
+
+def calculate_review_duration(content: Content) -> Optional[int]:
+    if not content.reviewed_at:
+        return None
+    start = content.assigned_at or content.created_at
+    if not start:
+        return None
+    delta = content.reviewed_at - start
+    return max(0, int(delta.total_seconds()))
+
+
+def compute_reviewer_performance(
+    db: Session,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> List[ReviewerPerformance]:
+    reviewers = db.query(User).filter(
+        User.role == "reviewer",
+        User.is_active == True
+    ).all()
+
+    result = []
+    for r in reviewers:
+        reviewed_query = db.query(Content).filter(
+            Content.reviewed_by == r.username
+        )
+        if start_date:
+            reviewed_query = reviewed_query.filter(Content.reviewed_at >= start_date)
+        if end_date:
+            reviewed_query = reviewed_query.filter(Content.reviewed_at <= end_date)
+        reviewed_contents = reviewed_query.all()
+
+        total_reviewed = len(reviewed_contents)
+        approved_count = sum(1 for c in reviewed_contents if c.status == "approved")
+        rejected_count = sum(1 for c in reviewed_contents if c.status == "rejected")
+
+        content_ids = [c.id for c in reviewed_contents]
+        sampled_reviews = db.query(SampleReview).filter(
+            SampleReview.original_reviewer == r.username,
+            SampleReview.review_status == "reviewed"
+        ).all()
+        if content_ids:
+            sampled_by_content = db.query(SampleReview).filter(
+                SampleReview.content_id.in_(content_ids),
+                SampleReview.review_status == "reviewed"
+            ).all()
+            sampled_reviews = list(set(sampled_reviews + sampled_by_content))
+
+        sampled_count = len(sampled_reviews)
+        inconsistent_count = sum(1 for s in sampled_reviews if s.is_consistent is False)
+        accuracy_rate = None
+        if sampled_count > 0:
+            accuracy_rate = round((sampled_count - inconsistent_count) / sampled_count, 4)
+
+        durations = []
+        total_duration = 0
+        for c in reviewed_contents:
+            d = c.review_duration_seconds
+            if d is None:
+                d = calculate_review_duration(c)
+            if d is not None and d >= 0:
+                durations.append(d)
+                total_duration += d
+        avg_review_seconds = None
+        if durations:
+            avg_review_seconds = round(total_duration / len(durations), 2)
+
+        resubmit_query = db.query(Content).filter(
+            Content.reviewed_by == r.username,
+            Content.original_content_id.isnot(None)
+        )
+        if start_date:
+            resubmit_query = resubmit_query.filter(Content.reviewed_at >= start_date)
+        if end_date:
+            resubmit_query = resubmit_query.filter(Content.reviewed_at <= end_date)
+        resubmit_processed = resubmit_query.count()
+
+        result.append(ReviewerPerformance(
+            username=r.username,
+            display_name=r.display_name,
+            total_reviewed=total_reviewed,
+            approved_count=approved_count,
+            rejected_count=rejected_count,
+            accuracy_rate=accuracy_rate,
+            inconsistent_count=inconsistent_count,
+            sampled_count=sampled_count,
+            avg_review_seconds=avg_review_seconds,
+            total_review_seconds=total_duration if durations else None,
+            resubmit_processed=resubmit_processed
+        ))
+    return result
+
+
+def save_content_version(db: Session, content: Content, change_summary: Optional[str] = None, modified_by: Optional[str] = None, version_number: Optional[int] = None):
+    version = ContentVersion(
+        content_id=content.id,
+        version_number=version_number or (content.version or 1),
+        title=content.title,
+        body=content.body,
+        image_url=content.image_url,
+        author=content.author,
+        source=content.source,
+        change_summary=change_summary,
+        modified_by=modified_by
+    )
+    db.add(version)
+    db.flush()
+    return version
+
+
+def diff_text(old_text: str, new_text: str) -> List[DiffSegment]:
+    import difflib
+    diffs = []
+    old_lines = old_text.splitlines(keepends=True) if old_text else []
+    new_lines = new_text.splitlines(keepends=True) if new_text else []
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+        if opcode == 'equal':
+            continue
+        old_chunk = ''.join(old_lines[i1:i2]) if old_lines[i1:i2] else None
+        new_chunk = ''.join(new_lines[j1:j2]) if new_lines[j1:j2] else None
+        if old_chunk and new_chunk:
+            diff_type = 'replace'
+        elif old_chunk:
+            diff_type = 'delete'
+        else:
+            diff_type = 'insert'
+        diffs.append(DiffSegment(
+            field='body_lines',
+            type=diff_type,
+            old_value=old_chunk,
+            new_value=new_chunk
+        ))
+    return diffs
+
+
 @app.on_event("startup")
 def startup_event():
     db = next(get_db())
     init_default_rules(db)
     init_ml_threshold_config(db)
     migrate_add_assigned_columns(db)
+    migrate_add_review_quality_columns(db)
+    Base.metadata.create_all(bind=engine, tables=[ContentVersion.__table__])
     init_default_users(db)
     db.close()
     asyncio.create_task(schedule_sampling_task())
@@ -574,7 +736,7 @@ async def review_content(
     if not content:
         raise HTTPException(status_code=404, detail="内容不存在")
 
-    if current_user.role != "admin" and content.assigned_to != current_user.username:
+    if current_user.role != "admin" and content.assigned_to is not None and content.assigned_to != current_user.username:
         raise HTTPException(status_code=403, detail="无权审核该内容")
 
     if action.action not in ["approve", "reject", "tag"]:
@@ -597,6 +759,13 @@ async def review_content(
     content.reviewed_at = datetime.utcnow()
     content.reviewed_by = reviewer_name
     content.review_note = action.note
+    duration = calculate_review_duration(content)
+    if duration is not None:
+        content.review_duration_seconds = duration
+
+    existing_versions = db.query(ContentVersion).filter(ContentVersion.content_id == content_id).count()
+    if existing_versions == 0:
+        save_content_version(db, content, change_summary="初始版本", modified_by="system")
 
     log = ReviewLog(
         content_id=content_id,
@@ -975,7 +1144,7 @@ async def batch_review_contents(
             if not content:
                 failed_ids.append(cid)
                 continue
-            if current_user.role != "admin" and content.assigned_to != current_user.username:
+            if current_user.role != "admin" and content.assigned_to is not None and content.assigned_to != current_user.username:
                 failed_ids.append(cid)
                 continue
             if request.action == "approve":
@@ -1154,6 +1323,369 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.send_personal_message({"type": "echo", "data": data}, websocket)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.get("/api/reviewers/performance", response_model=ReviewerPerformanceList, tags=["绩效统计"])
+def get_reviewer_performance(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    start_dt = None
+    end_dt = None
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        except Exception:
+            raise HTTPException(status_code=400, detail="start_date格式错误，应为ISO格式")
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        except Exception:
+            raise HTTPException(status_code=400, detail="end_date格式错误，应为ISO格式")
+    reviewers = compute_reviewer_performance(db, start_dt, end_dt)
+    return ReviewerPerformanceList(
+        period_start=start_dt,
+        period_end=end_dt,
+        reviewers=reviewers
+    )
+
+
+@app.get("/api/contents/{content_id}/versions", response_model=List[ContentVersionResponse], tags=["版本历史"])
+def get_content_versions(
+    content_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        raise HTTPException(status_code=404, detail="内容不存在")
+    versions = db.query(ContentVersion).filter(
+        ContentVersion.content_id == content_id
+    ).order_by(ContentVersion.version_number.desc()).all()
+    if not versions:
+        return [ContentVersionResponse(
+            id=0,
+            content_id=content.id,
+            version_number=content.version or 1,
+            title=content.title,
+            body=content.body,
+            image_url=content.image_url,
+            author=content.author,
+            source=content.source,
+            change_summary="初始版本",
+            modified_by="system",
+            created_at=content.created_at
+        )]
+    return versions
+
+
+@app.get("/api/contents/{content_id}/versions/{version_number}", response_model=ContentVersionResponse, tags=["版本历史"])
+def get_content_version(
+    content_id: int,
+    version_number: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        raise HTTPException(status_code=404, detail="内容不存在")
+    version = db.query(ContentVersion).filter(
+        ContentVersion.content_id == content_id,
+        ContentVersion.version_number == version_number
+    ).first()
+    if not version:
+        if (content.version or 1) == version_number:
+            return ContentVersionResponse(
+                id=0,
+                content_id=content.id,
+                version_number=content.version or 1,
+                title=content.title,
+                body=content.body,
+                image_url=content.image_url,
+                author=content.author,
+                source=content.source,
+                change_summary="当前版本",
+                modified_by="system",
+                created_at=content.created_at
+            )
+        else:
+            raise HTTPException(status_code=404, detail="版本不存在")
+    return version
+
+
+@app.get("/api/contents/{content_id}/diff", response_model=ContentDiffResponse, tags=["版本历史"])
+def get_content_diff(
+    content_id: int,
+    old_version: int = 1,
+    new_version: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    content = db.query(Content).filter(Content.id == content_id).first()
+    if not content:
+        raise HTTPException(status_code=404, detail="内容不存在")
+    current_version_num = content.version or 1
+    if new_version is None:
+        new_version = current_version_num
+
+    def get_version_data(v_num):
+        v = db.query(ContentVersion).filter(
+            ContentVersion.content_id == content_id,
+            ContentVersion.version_number == v_num
+        ).first()
+        if v:
+            return v
+        if v_num == current_version_num:
+            return ContentVersion(
+                title=content.title,
+                body=content.body,
+                image_url=content.image_url,
+                author=content.author,
+                source=content.source
+            )
+        return None
+
+    old_ver = get_version_data(old_version)
+    new_ver = get_version_data(new_version)
+    if not old_ver or not new_ver:
+        raise HTTPException(status_code=404, detail="指定的版本不存在")
+
+    diffs = []
+    compare_fields = [
+        ('title', old_ver.title, new_ver.title),
+        ('author', old_ver.author, new_ver.author),
+        ('source', old_ver.source, new_ver.source),
+        ('image_url', old_ver.image_url, new_ver.image_url),
+    ]
+    for field, old_val, new_val in compare_fields:
+        if old_val != new_val:
+            diff_type = 'equal'
+            if old_val and not new_val:
+                diff_type = 'delete'
+            elif not old_val and new_val:
+                diff_type = 'insert'
+            elif old_val != new_val:
+                diff_type = 'replace'
+            diffs.append(DiffSegment(
+                field=field,
+                type=diff_type,
+                old_value=old_val,
+                new_value=new_val
+            ))
+
+    if old_ver.body != new_ver.body:
+        body_diffs = diff_text(old_ver.body or '', new_ver.body or '')
+        if body_diffs:
+            diffs.extend(body_diffs)
+        else:
+            diffs.append(DiffSegment(
+                field='body',
+                type='replace',
+                old_value=old_ver.body,
+                new_value=new_ver.body
+            ))
+
+    return ContentDiffResponse(
+        content_id=content_id,
+        old_version=old_version,
+        new_version=new_version,
+        diffs=diffs
+    )
+
+
+@app.post("/api/contents/{content_id}/resubmit", response_model=ContentResponse, tags=["打回重提"])
+async def resubmit_content(
+    content_id: int,
+    request: ContentResubmitRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    original = db.query(Content).filter(Content.id == content_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="原内容不存在")
+    if original.status != "rejected":
+        raise HTTPException(status_code=400, detail="只有被拒绝的内容可以修改后重新提交")
+
+    new_version_num = (original.version or 1) + 1
+
+    original.title = request.title
+    original.body = request.body
+    original.image_url = request.image_url
+    original.author = request.author or original.author
+    original.source = request.source or original.source
+    original.status = "pending"
+    original.version = new_version_num
+    original.auto_review_result = None
+    original.auto_review_score = None
+    original.auto_review_reason = None
+    original.combined_score = None
+    original.ml_score = None
+    original.ml_confidence = None
+    original.ml_result = None
+    original.ml_model_version = None
+    original.ml_category_scores = None
+    original.image_review_result = None
+    original.image_review_confidence = None
+    original.reviewed_at = None
+    original.reviewed_by = None
+    original.review_note = None
+    original.review_duration_seconds = None
+    original.assigned_to = None
+    original.assigned_at = None
+    original.assigned_by = None
+
+    save_content_version(
+        db, original,
+        change_summary=request.change_summary or f"打回修改 v{new_version_num}",
+        modified_by=request.modified_by or (current_user.display_name or current_user.username),
+        version_number=new_version_num
+    )
+
+    img_result = image_service.review(request.image_url)
+    if img_result:
+        original.image_review_result = img_result.result
+        original.image_review_confidence = img_result.confidence
+
+    text_engine = AutoModerationEngine(db)
+    text_result = text_engine.review(request.title, request.body)
+
+    threshold_cfg = get_active_threshold_config(db)
+    pass_th = threshold_cfg.pass_threshold
+    reject_th = threshold_cfg.reject_threshold
+    ml_w = threshold_cfg.ml_weight
+    rule_w = threshold_cfg.rule_weight
+
+    ml_client = get_ml_client()
+    ml_result: Optional[MLReviewResult] = None
+    try:
+        ml_result = await ml_client.review(request.title, request.body, request.image_url)
+    except Exception as e:
+        logger.warning(f"调用ML审核失败，降级为纯规则审核: {e}")
+
+    ml_score = 0.5
+    ml_conf = None
+    ml_result_str = "unavailable"
+    ml_model_ver = None
+    ml_cats = None
+
+    if ml_result:
+        ml_score = ml_result.overall_score
+        ml_conf = ml_result.confidence
+        ml_model_ver = ml_result.model_version
+        ml_cats = [{"category": c.category, "score": c.score} for c in ml_result.category_scores]
+        if ml_score <= pass_th:
+            ml_result_str = "auto_pass"
+        elif ml_score >= reject_th:
+            ml_result_str = "auto_reject"
+        else:
+            ml_result_str = "manual"
+
+        ml_record = MLReviewRecord(
+            content_id=original.id,
+            model_version=ml_result.model_version,
+            overall_score=ml_result.overall_score,
+            confidence=ml_result.confidence,
+            is_safe=ml_result.is_safe,
+            category_scores=ml_cats,
+            detected_topics=ml_result.detected_topics,
+            processing_time_ms=ml_result.processing_time_ms,
+            threshold_pass=pass_th,
+            threshold_reject=reject_th
+        )
+        db.add(ml_record)
+
+    original.ml_score = ml_score
+    original.ml_confidence = ml_conf
+    original.ml_result = ml_result_str
+    original.ml_model_version = ml_model_ver
+    original.ml_category_scores = ml_cats
+
+    rule_score_norm = normalize_rule_score(text_result.score)
+
+    force_reject = False
+    combined_reasons = []
+
+    if img_result:
+        img_desc = {"safe": "图片审核正常", "unsafe": "图片审核不通过", "uncertain": "图片审核不确定需人工"}
+        combined_reasons.append(f"{img_desc[img_result.result]}: {img_result.reason}")
+        if img_result.result == "unsafe":
+            force_reject = True
+
+    ml_desc_map = {"auto_pass": "通过", "auto_reject": "拒绝", "manual": "转人工", "unavailable": "不可用"}
+    combined_reasons.append(f"文字规则审核[{text_result.score}分]: {text_result.reason}")
+    combined_reasons.append(
+        f"ML审核[score={ml_score:.3f},conf={(ml_conf or 0):.3f}]: {ml_desc_map.get(ml_result_str, ml_result_str)}"
+    )
+
+    final_reason = "; ".join(combined_reasons)
+
+    if force_reject:
+        final_score = 1.0
+        final_result = "auto_reject"
+    else:
+        final_score = combine_scores(rule_score_norm, ml_score, ml_w, rule_w)
+        final_result = determine_result(final_score, pass_th, reject_th)
+
+    final_score_int = int(round((final_score - 0.5) * 40))
+
+    original.combined_score = final_score
+    original.auto_review_score = final_score_int
+    original.auto_review_result = final_result
+    original.auto_review_reason = final_reason
+
+    if final_result == "auto_pass":
+        original.status = "approved"
+        original.reviewed_at = datetime.utcnow()
+        original.reviewed_by = "auto"
+        log = ReviewLog(
+            content_id=original.id,
+            action="auto_approve",
+            reviewer="auto",
+            note=f"自动审核通过(重新提交v{new_version_num}): {final_reason}",
+            tags=[]
+        )
+        db.add(log)
+    elif final_result == "auto_reject":
+        original.status = "rejected"
+        original.reviewed_at = datetime.utcnow()
+        original.reviewed_by = "auto"
+        log = ReviewLog(
+            content_id=original.id,
+            action="auto_reject",
+            reviewer="auto",
+            note=f"自动审核拒绝(重新提交v{new_version_num}): {final_reason}",
+            tags=[]
+        )
+        db.add(log)
+    else:
+        original.status = "pending"
+
+    resubmit_log = ReviewLog(
+        content_id=original.id,
+        action="resubmit",
+        reviewer=request.modified_by or (current_user.display_name or current_user.username),
+        note=f"打回修改后重新提交 v{new_version_num}: {request.change_summary or '未备注修改说明'}",
+        tags=[]
+    )
+    db.add(resubmit_log)
+
+    db.commit()
+    db.refresh(original)
+
+    asyncio.create_task(manager.broadcast({
+        "type": "content_update",
+        "data": {
+            "id": original.id,
+            "status": original.status,
+            "title": original.title,
+            "resubmit": True,
+            "version": new_version_num
+        }
+    }))
+
+    return original
 
 
 @app.get("/api/health")
