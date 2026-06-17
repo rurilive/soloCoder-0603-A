@@ -1,17 +1,60 @@
 import axios from 'axios';
 
+export const authEventBus = {
+  listeners: new Set(),
+  onAuthRequired(callback) {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  },
+  emitAuthRequired() {
+    this.listeners.forEach(cb => cb());
+  }
+};
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 15000
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('current_user');
+      authEventBus.emitAuthRequired();
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const contentAPI = {
   submit: (data) => api.post('/contents', data),
-  list: (status) => api.get('/contents', { params: { status } }),
+  list: (params) => api.get('/contents', { params }),
   get: (id) => api.get(`/contents/${id}`),
   review: (id, data) => api.post(`/contents/${id}/review`, data),
   logs: (id) => api.get(`/contents/${id}/logs`),
-  mlRecord: (id) => api.get(`/contents/${id}/ml-record`)
+  mlRecord: (id) => api.get(`/contents/${id}/ml-record`),
+  batchReview: (data) => api.post('/contents/batch-review', data),
+  assign: (data) => api.post('/contents/assign', data)
+};
+
+export const authAPI = {
+  login: (data) => api.post('/auth/login', data)
+};
+
+export const userAPI = {
+  listReviewers: () => api.get('/users/reviewers'),
+  getReviewerStats: () => api.get('/users/reviewers/stats'),
+  getCurrentUser: (token) => api.get('/users/me', { params: { token } })
 };
 
 export const rulesAPI = {

@@ -4,6 +4,18 @@ from datetime import datetime
 from database import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), default="reviewer")
+    display_name = Column(String(100))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+
 class Content(Base):
     __tablename__ = "contents"
 
@@ -27,6 +39,9 @@ class Content(Base):
     ml_result = Column(String(50))
     ml_model_version = Column(String(100))
     ml_category_scores = Column(JSON)
+    assigned_to = Column(String(100))
+    assigned_at = Column(DateTime)
+    assigned_by = Column(String(100))
     reviewed_at = Column(DateTime)
     reviewed_by = Column(String(100))
     review_note = Column(Text)

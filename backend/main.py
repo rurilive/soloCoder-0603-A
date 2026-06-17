@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -7,11 +8,13 @@ import asyncio
 import random
 import uuid
 import logging
+import hashlib
+from jose import jwt, JWTError, ExpiredSignatureError
 
 from database import engine, get_db, Base
 from models import (
     Content, ReviewLog, AutoReviewRule,
-    MLThresholdConfig, MLReviewRecord, SampleReview, SampleBatch
+    MLThresholdConfig, MLReviewRecord, SampleReview, SampleBatch, User
 )
 from schemas import (
     ContentSubmit, ContentResponse, ReviewAction, ReviewLogResponse,
@@ -19,8 +22,27 @@ from schemas import (
     ImageReviewResult, MLReviewResult,
     MLThresholdConfigCreate, MLThresholdConfigUpdate, MLThresholdConfigResponse,
     MLReviewRecordResponse, SampleReviewAction, SampleReviewResponse,
-    SampleBatchResponse, SampleRequest
+    SampleBatchResponse, SampleRequest,
+    BatchReviewRequest, BatchReviewResult,
+    AssignTaskRequest, AssignTaskResult,
+    UserLogin, UserResponse, LoginResponse, ReviewerStats
 )
+
+SECRET_KEY = "moderation-secret-key-2024"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+
+PASSWORD_SALT = "moderation-salt-2024"
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256((PASSWORD_SALT + password).encode('utf-8')).hexdigest()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return hash_password(plain) == hashed
 from auto_moderation import AutoModerationEngine, init_default_rules
 from image_moderation import image_service
 from websocket_manager import manager
@@ -104,11 +126,111 @@ def determine_result(combined_score: float, pass_th: float, reject_th: float) ->
         return "manual"
 
 
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="无效的认证凭证",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证令牌",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="认证令牌已过期，请重新登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except JWTError:
+        raise credentials_exception
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号已被禁用",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要管理员权限",
+        )
+    return current_user
+
+
+def init_default_users(db: Session):
+    default_users = [
+        {"username": "admin", "password": "admin123", "role": "admin", "display_name": "系统管理员"},
+        {"username": "reviewer1", "password": "123456", "role": "reviewer", "display_name": "审核员张"},
+        {"username": "reviewer2", "password": "123456", "role": "reviewer", "display_name": "审核员李"},
+        {"username": "reviewer3", "password": "123456", "role": "reviewer", "display_name": "审核员王"},
+    ]
+    for u in default_users:
+        existing = db.query(User).filter(User.username == u["username"]).first()
+        if not existing:
+            db_user = User(
+                username=u["username"],
+                password_hash=hash_password(u["password"]),
+                role=u["role"],
+                display_name=u["display_name"],
+                is_active=True
+            )
+            db.add(db_user)
+    db.commit()
+
+
+def migrate_add_assigned_columns(db: Session):
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN assigned_to VARCHAR(100)"))
+        db.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN assigned_at DATETIME"))
+        db.commit()
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN assigned_by VARCHAR(100)"))
+        db.commit()
+    except Exception:
+        pass
+
+
 @app.on_event("startup")
 def startup_event():
     db = next(get_db())
     init_default_rules(db)
     init_ml_threshold_config(db)
+    migrate_add_assigned_columns(db)
+    init_default_users(db)
     db.close()
     asyncio.create_task(schedule_sampling_task())
 
@@ -395,13 +517,26 @@ async def submit_content(content: ContentSubmit, db: Session = Depends(get_db)):
 @app.get("/api/contents", response_model=List[ContentResponse], tags=["内容"])
 def get_contents(
     status: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    reviewer: Optional[str] = None,
+    unassigned_only: Optional[bool] = False,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     query = db.query(Content)
     if status:
         query = query.filter(Content.status == status)
+    if current_user.role == "admin":
+        if assigned_to:
+            query = query.filter(Content.assigned_to == assigned_to)
+        if reviewer:
+            query = query.filter(Content.reviewed_by == reviewer)
+        if unassigned_only:
+            query = query.filter(Content.assigned_to == None)
+    else:
+        query = query.filter(Content.assigned_to == current_user.username)
     return query.order_by(Content.created_at.desc()).offset(skip).limit(limit).all()
 
 
@@ -417,11 +552,15 @@ def get_content(content_id: int, db: Session = Depends(get_db)):
 async def review_content(
     content_id: int,
     action: ReviewAction,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     content = db.query(Content).filter(Content.id == content_id).first()
     if not content:
         raise HTTPException(status_code=404, detail="内容不存在")
+
+    if current_user.role != "admin" and content.assigned_to != current_user.username:
+        raise HTTPException(status_code=403, detail="无权审核该内容")
 
     if action.action not in ["approve", "reject", "tag"]:
         raise HTTPException(status_code=400, detail="无效的审核操作")
@@ -438,14 +577,16 @@ async def review_content(
                 existing_tags.append(tag)
         content.tags = existing_tags
 
+    reviewer_name = current_user.display_name or current_user.username
+
     content.reviewed_at = datetime.utcnow()
-    content.reviewed_by = action.reviewer
+    content.reviewed_by = reviewer_name
     content.review_note = action.note
 
     log = ReviewLog(
         content_id=content_id,
         action=action.action,
-        reviewer=action.reviewer,
+        reviewer=reviewer_name,
         note=action.note,
         tags=action.tags or []
     )
@@ -459,7 +600,7 @@ async def review_content(
             "id": content.id,
             "status": content.status,
             "title": content.title,
-            "reviewer": action.reviewer
+            "reviewer": reviewer_name
         }
     }))
 
@@ -796,6 +937,197 @@ async def review_sample(review_id: int, action: SampleReviewAction, db: Session 
     }))
 
     return sr
+
+
+@app.post("/api/contents/batch-review", response_model=BatchReviewResult, tags=["审核"])
+async def batch_review_contents(
+    request: BatchReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if request.action not in ["approve", "reject", "tag"]:
+        raise HTTPException(status_code=400, detail="无效的审核操作")
+    if not request.content_ids:
+        raise HTTPException(status_code=400, detail="content_ids不能为空")
+
+    reviewer_name = current_user.display_name or current_user.username
+    success_count = 0
+    failed_ids = []
+
+    for cid in request.content_ids:
+        try:
+            content = db.query(Content).filter(Content.id == cid).first()
+            if not content:
+                failed_ids.append(cid)
+                continue
+            if current_user.role != "admin" and content.assigned_to != current_user.username:
+                failed_ids.append(cid)
+                continue
+            if request.action == "approve":
+                content.status = "approved"
+            elif request.action == "reject":
+                content.status = "rejected"
+            if request.tags:
+                existing_tags = content.tags or []
+                for tag in request.tags:
+                    if tag not in existing_tags:
+                        existing_tags.append(tag)
+                content.tags = existing_tags
+            content.reviewed_at = datetime.utcnow()
+            content.reviewed_by = reviewer_name
+            content.review_note = request.note
+            log = ReviewLog(
+                content_id=cid,
+                action=request.action,
+                reviewer=reviewer_name,
+                note=request.note,
+                tags=request.tags or []
+            )
+            db.add(log)
+            success_count += 1
+        except Exception:
+            failed_ids.append(cid)
+
+    db.commit()
+
+    asyncio.create_task(manager.broadcast({
+        "type": "batch_reviewed",
+        "data": {
+            "action": request.action,
+            "count": success_count,
+            "reviewer": reviewer_name
+        }
+    }))
+
+    return BatchReviewResult(
+        success=success_count,
+        failed=len(failed_ids),
+        failed_ids=failed_ids
+    )
+
+
+@app.post("/api/contents/assign", response_model=AssignTaskResult, tags=["任务分配"])
+async def assign_tasks(
+    request: AssignTaskRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    if not request.content_ids:
+        raise HTTPException(status_code=400, detail="content_ids不能为空")
+    if not request.assigned_to:
+        raise HTTPException(status_code=400, detail="assigned_to不能为空")
+
+    target_user = db.query(User).filter(User.username == request.assigned_to).first()
+    if not target_user or not target_user.is_active:
+        raise HTTPException(status_code=400, detail="目标审核员不存在或已禁用")
+
+    assigner_name = current_user.display_name or current_user.username
+    success_count = 0
+    failed_ids = []
+
+    for cid in request.content_ids:
+        try:
+            content = db.query(Content).filter(Content.id == cid).first()
+            if not content:
+                failed_ids.append(cid)
+                continue
+            content.assigned_to = request.assigned_to
+            content.assigned_at = datetime.utcnow()
+            content.assigned_by = assigner_name
+
+            log = ReviewLog(
+                content_id=cid,
+                action="assign",
+                reviewer=assigner_name,
+                note=f"分配给 {target_user.display_name or target_user.username}",
+                tags=[]
+            )
+            db.add(log)
+            success_count += 1
+        except Exception:
+            failed_ids.append(cid)
+
+    db.commit()
+
+    asyncio.create_task(manager.broadcast({
+        "type": "tasks_assigned",
+        "data": {
+            "assigned_to": target_user.display_name or target_user.username,
+            "count": success_count
+        }
+    }))
+
+    return AssignTaskResult(
+        success=success_count,
+        failed=len(failed_ids),
+        failed_ids=failed_ids
+    )
+
+
+@app.post("/api/auth/login", response_model=LoginResponse, tags=["用户认证"])
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == login_data.username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="账号已禁用")
+    if not verify_password(login_data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    token = create_access_token({
+        "sub": user.username,
+        "role": user.role,
+        "user_id": user.id
+    })
+
+    return LoginResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse.model_validate(user)
+    )
+
+
+@app.get("/api/users/reviewers", response_model=List[UserResponse], tags=["用户"])
+def list_reviewers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return db.query(User).filter(
+        User.role == "reviewer",
+        User.is_active == True
+    ).order_by(User.username).all()
+
+
+@app.get("/api/users/reviewers/stats", response_model=List[ReviewerStats], tags=["用户"])
+def get_reviewer_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    reviewers = db.query(User).filter(
+        User.role == "reviewer",
+        User.is_active == True
+    ).all()
+    result = []
+    for r in reviewers:
+        pending_count = db.query(Content).filter(
+            Content.assigned_to == r.username,
+            Content.status == "pending"
+        ).count()
+        total_reviewed = db.query(Content).filter(
+            Content.reviewed_by == r.username
+        ).count()
+        result.append(ReviewerStats(
+            username=r.username,
+            display_name=r.display_name,
+            pending_count=pending_count,
+            total_reviewed=total_reviewed
+        ))
+    return result
+
+
+@app.get("/api/users/me", response_model=UserResponse, tags=["用户"])
+def get_me(current_user: User = Depends(get_current_user)):
+    return UserResponse.model_validate(current_user)
 
 
 @app.websocket("/ws")

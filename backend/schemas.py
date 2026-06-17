@@ -35,6 +35,9 @@ class ContentResponse(BaseModel):
     reviewed_at: Optional[datetime]
     reviewed_by: Optional[str]
     review_note: Optional[str]
+    assigned_to: Optional[str]
+    assigned_at: Optional[datetime]
+    assigned_by: Optional[str]
 
     model_config = {"protected_namespaces": (), "from_attributes": True}
 
@@ -208,3 +211,57 @@ class SampleRequest(BaseModel):
     sample_rate: float = Field(ge=0.01, le=1.0, default=0.1)
     batch_id: Optional[str] = None
     max_samples: Optional[int] = Field(ge=1, default=None)
+
+
+class BatchReviewRequest(BaseModel):
+    content_ids: List[int]
+    action: str
+    note: Optional[str] = None
+    tags: Optional[List[str]] = Field(default_factory=list)
+    reviewer: Optional[str] = "system"
+
+
+class BatchReviewResult(BaseModel):
+    success: int
+    failed: int
+    failed_ids: List[int] = []
+
+
+class AssignTaskRequest(BaseModel):
+    content_ids: List[int]
+    assigned_to: str
+    assigned_by: Optional[str] = "system"
+
+
+class AssignTaskResult(BaseModel):
+    success: int
+    failed: int
+    failed_ids: List[int] = []
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+    display_name: Optional[str]
+    is_active: bool
+
+    model_config = {"from_attributes": True}
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class ReviewerStats(BaseModel):
+    username: str
+    display_name: Optional[str]
+    pending_count: int
+    total_reviewed: int
