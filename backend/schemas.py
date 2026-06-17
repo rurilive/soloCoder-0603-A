@@ -32,6 +32,7 @@ class ContentResponse(BaseModel):
     ml_result: Optional[str]
     ml_model_version: Optional[str]
     ml_category_scores: Optional[List[dict]]
+    review_started_at: Optional[datetime]
     reviewed_at: Optional[datetime]
     reviewed_by: Optional[str]
     review_note: Optional[str]

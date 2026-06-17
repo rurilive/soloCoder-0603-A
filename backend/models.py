@@ -42,6 +42,7 @@ class Content(Base):
     assigned_to = Column(String(100))
     assigned_at = Column(DateTime)
     assigned_by = Column(String(100))
+    review_started_at = Column(DateTime)
     reviewed_at = Column(DateTime)
     reviewed_by = Column(String(100))
     review_note = Column(Text)

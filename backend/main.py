@@ -247,12 +247,18 @@ def migrate_add_review_quality_columns(db: Session):
         db.commit()
     except Exception:
         pass
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE contents ADD COLUMN review_started_at DATETIME"))
+        db.commit()
+    except Exception:
+        pass
 
 
 def calculate_review_duration(content: Content) -> Optional[int]:
     if not content.reviewed_at:
         return None
-    start = content.assigned_at or content.created_at
+    start = content.review_started_at or content.assigned_at or content.created_at
     if not start:
         return None
     delta = content.reviewed_at - start
@@ -722,6 +728,12 @@ def get_content(
             raise HTTPException(status_code=403, detail="无权查看该内容")
         if content.assigned_to is not None and content.assigned_to != current_user.username:
             raise HTTPException(status_code=403, detail="无权查看该内容")
+
+    if current_user.role != "admin" and content.status == "pending" and not content.review_started_at:
+        content.review_started_at = datetime.utcnow()
+        db.commit()
+        db.refresh(content)
+
     return content
 
 
@@ -762,10 +774,6 @@ async def review_content(
     duration = calculate_review_duration(content)
     if duration is not None:
         content.review_duration_seconds = duration
-
-    existing_versions = db.query(ContentVersion).filter(ContentVersion.content_id == content_id).count()
-    if existing_versions == 0:
-        save_content_version(db, content, change_summary="初始版本", modified_by="system")
 
     log = ReviewLog(
         content_id=content_id,
@@ -1364,21 +1372,23 @@ def get_content_versions(
     versions = db.query(ContentVersion).filter(
         ContentVersion.content_id == content_id
     ).order_by(ContentVersion.version_number.desc()).all()
-    if not versions:
-        return [ContentVersionResponse(
-            id=0,
-            content_id=content.id,
-            version_number=content.version or 1,
-            title=content.title,
-            body=content.body,
-            image_url=content.image_url,
-            author=content.author,
-            source=content.source,
-            change_summary="初始版本",
-            modified_by="system",
-            created_at=content.created_at
-        )]
-    return versions
+
+    current_version = ContentVersionResponse(
+        id=0,
+        content_id=content.id,
+        version_number=content.version or 1,
+        title=content.title,
+        body=content.body,
+        image_url=content.image_url,
+        author=content.author,
+        source=content.source,
+        change_summary="当前版本",
+        modified_by="system",
+        created_at=content.reviewed_at or content.created_at
+    )
+
+    result = [current_version] + versions
+    return result
 
 
 @app.get("/api/contents/{content_id}/versions/{version_number}", response_model=ContentVersionResponse, tags=["版本历史"])
@@ -1408,7 +1418,7 @@ def get_content_version(
                 source=content.source,
                 change_summary="当前版本",
                 modified_by="system",
-                created_at=content.created_at
+                created_at=content.reviewed_at or content.created_at
             )
         else:
             raise HTTPException(status_code=404, detail="版本不存在")
@@ -1510,6 +1520,13 @@ async def resubmit_content(
 
     new_version_num = (original.version or 1) + 1
 
+    save_content_version(
+        db, original,
+        change_summary=request.change_summary or f"打回修改 v{original.version or 1}",
+        modified_by=request.modified_by or (current_user.display_name or current_user.username),
+        version_number=original.version or 1
+    )
+
     original.title = request.title
     original.body = request.body
     original.image_url = request.image_url
@@ -1528,6 +1545,7 @@ async def resubmit_content(
     original.ml_category_scores = None
     original.image_review_result = None
     original.image_review_confidence = None
+    original.review_started_at = None
     original.reviewed_at = None
     original.reviewed_by = None
     original.review_note = None
@@ -1535,13 +1553,6 @@ async def resubmit_content(
     original.assigned_to = None
     original.assigned_at = None
     original.assigned_by = None
-
-    save_content_version(
-        db, original,
-        change_summary=request.change_summary or f"打回修改 v{new_version_num}",
-        modified_by=request.modified_by or (current_user.display_name or current_user.username),
-        version_number=new_version_num
-    )
 
     img_result = image_service.review(request.image_url)
     if img_result:
