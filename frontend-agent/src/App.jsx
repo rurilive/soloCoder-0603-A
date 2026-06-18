@@ -6,6 +6,7 @@ import {
   InboxOutlined,
   UserOutlined,
   LogoutOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
@@ -13,6 +14,7 @@ import Dashboard from './pages/Dashboard';
 import PendingTickets from './pages/PendingTickets';
 import MyTickets from './pages/MyTickets';
 import TicketDetail from './pages/TicketDetail';
+import SLARules from './pages/SLARules';
 
 const { Header, Sider, Content } = Layout;
 
@@ -20,6 +22,7 @@ const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/pending', icon: <InboxOutlined />, label: '待处理工单' },
   { key: '/my-tickets', icon: <UserOutlined />, label: '我的工单' },
+  { key: '/sla-rules', icon: <SettingOutlined />, label: 'SLA规则配置' },
 ];
 
 export default function App() {
@@ -34,9 +37,12 @@ export default function App() {
     navigate('/login');
   };
 
-  const currentMenuKey = ['/' + location.pathname.split('/')[1]].includes('/ticket')
-    ? '/my-tickets'
-    : location.pathname;
+  let currentMenuKey = location.pathname;
+  if (location.pathname.startsWith('/ticket/')) {
+    currentMenuKey = '/my-tickets';
+  } else if (location.pathname === '/sla-rules') {
+    currentMenuKey = '/sla-rules';
+  }
 
   return (
     <Routes>
@@ -99,6 +105,7 @@ export default function App() {
                     <Route path="/pending" element={<PendingTickets />} />
                     <Route path="/my-tickets" element={<MyTickets />} />
                     <Route path="/ticket/:id" element={<TicketDetail />} />
+                    <Route path="/sla-rules" element={<SLARules />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Content>

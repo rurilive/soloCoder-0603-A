@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models import ActionType, TicketPriority, TicketStatus, UserRole
+from app.models import ActionType, SLAEventType, SLAStatus, TicketPriority, TicketStatus, UserRole
 
 
 class UserCreate(BaseModel):
@@ -156,3 +156,76 @@ class RecommendationRequest(BaseModel):
 class RecommendationResponse(BaseModel):
     knowledge_articles: list[RecommendedKBOut] = []
     similar_tickets: list[RecommendedTicketOut] = []
+
+
+class SLARuleCreate(BaseModel):
+    category: str = Field(..., max_length=50)
+    priority: TicketPriority
+    response_time_minutes: int = Field(..., ge=1)
+    resolution_time_minutes: int = Field(..., ge=1)
+    warning_threshold: float = Field(0.75, ge=0.1, le=0.99)
+    auto_escalate: bool = False
+
+
+class SLARuleUpdate(BaseModel):
+    response_time_minutes: Optional[int] = Field(None, ge=1)
+    resolution_time_minutes: Optional[int] = Field(None, ge=1)
+    warning_threshold: Optional[float] = Field(None, ge=0.1, le=0.99)
+    auto_escalate: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class SLARuleOut(BaseModel):
+    id: int
+    category: str
+    priority: TicketPriority
+    response_time_minutes: int
+    resolution_time_minutes: int
+    warning_threshold: float
+    auto_escalate: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class SLAStatusOut(BaseModel):
+    sla_status: SLAStatus
+    response_deadline: Optional[datetime] = None
+    resolution_deadline: Optional[datetime] = None
+    response_remaining_minutes: Optional[float] = None
+    resolution_remaining_minutes: Optional[float] = None
+    response_breached: bool = False
+    resolution_breached: bool = False
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+
+
+class TicketWithSLAOut(TicketOut):
+    sla: Optional[SLAStatusOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TicketDetailWithSLAOut(TicketDetailOut):
+    sla: Optional[SLAStatusOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SLAEventOut(BaseModel):
+    id: int
+    event_type: SLAEventType
+    message: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketSLADetailOut(SLAStatusOut):
+    id: int
+    sla_rule: Optional[SLARuleOut] = None
+    events: list[SLAEventOut] = []
+
+    model_config = {"from_attributes": True}

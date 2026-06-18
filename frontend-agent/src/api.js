@@ -53,4 +53,16 @@ export const getTicketStats = () => api.get('/tickets/stats');
 
 export const getAgents = () => api.get('/auth/agents');
 
+export const getSLARules = (params) => api.get('/sla/rules', { params });
+
+export const createSLARule = (data) => api.post('/sla/rules', data);
+
+export const updateSLARule = (id, data) => api.put(`/sla/rules/${id}`, data);
+
+export const deleteSLARule = (id) => api.delete(`/sla/rules/${id}`);
+
+export const getTicketSLA = (ticketId) => api.get(`/sla/ticket/${ticketId}`);
+
+export const getTicketSLAStatus = (ticketId) => api.get(`/sla/ticket/${ticketId}/status`);
+
 export default api;

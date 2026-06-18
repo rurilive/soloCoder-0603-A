@@ -7,13 +7,35 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import User, get_current_user, require_role
 from app.database import get_db
-from app.models import ActionType, Ticket, TicketAction, TicketMessage, TicketPriority, TicketStatus, UserRole
-from app.schemas import ActionCreate, ActionOut, TicketCreate, TicketDetailOut, TicketOut
+from app.models import ActionType, Ticket, TicketAction, TicketMessage, TicketPriority, TicketSLA, TicketStatus, UserRole
+from app.schemas import ActionCreate, ActionOut, TicketCreate, TicketDetailWithSLAOut, TicketWithSLAOut
+from app.sla_service import compute_sla_status, create_ticket_sla, mark_first_response, mark_resolved
 
 router = APIRouter()
 
 
-@router.post("/", response_model=TicketOut, status_code=status.HTTP_201_CREATED)
+def _enrich_ticket_with_sla(ticket: Ticket) -> dict:
+    sla_status = compute_sla_status(ticket.sla, ticket)
+    data = {
+        "id": ticket.id,
+        "title": ticket.title,
+        "description": ticket.description,
+        "status": ticket.status,
+        "priority": ticket.priority,
+        "category": ticket.category,
+        "user_id": ticket.user_id,
+        "agent_id": ticket.agent_id,
+        "created_at": ticket.created_at,
+        "updated_at": ticket.updated_at,
+        "closed_at": ticket.closed_at,
+        "user": ticket.user,
+        "agent": ticket.agent,
+        "sla": sla_status,
+    }
+    return data
+
+
+@router.post("/", response_model=TicketWithSLAOut, status_code=status.HTTP_201_CREATED)
 async def create_ticket(
     body: TicketCreate,
     current_user: User = Depends(get_current_user),
@@ -29,10 +51,14 @@ async def create_ticket(
     db.add(ticket)
     await db.commit()
     await db.refresh(ticket)
-    return ticket
+
+    ticket_sla = await create_ticket_sla(db, ticket)
+    ticket.sla = ticket_sla
+
+    return _enrich_ticket_with_sla(ticket)
 
 
-@router.get("/", response_model=list[TicketOut])
+@router.get("/", response_model=list[TicketWithSLAOut])
 async def list_tickets(
     status_filter: TicketStatus | None = Query(None, alias="status"),
     priority: TicketPriority | None = Query(None),
@@ -42,7 +68,11 @@ async def list_tickets(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Ticket).options(selectinload(Ticket.user), selectinload(Ticket.agent))
+    query = select(Ticket).options(
+        selectinload(Ticket.user),
+        selectinload(Ticket.agent),
+        selectinload(Ticket.sla).selectinload(TicketSLA.rule),
+    )
 
     if current_user.role == UserRole.user:
         query = query.where(Ticket.user_id == current_user.id)
@@ -58,7 +88,16 @@ async def list_tickets(
 
     query = query.order_by(Ticket.created_at.desc()).offset((page - 1) * size).limit(size)
     result = await db.execute(query)
-    return result.scalars().all()
+    tickets = result.scalars().all()
+
+    enriched = []
+    for ticket in tickets:
+        if not ticket.sla and ticket.status not in (TicketStatus.resolved, TicketStatus.closed):
+            ticket_sla = await create_ticket_sla(db, ticket)
+            ticket.sla = ticket_sla
+        enriched.append(_enrich_ticket_with_sla(ticket))
+
+    return enriched
 
 
 @router.get("/stats")
@@ -74,10 +113,27 @@ async def ticket_stats(
     total_result = await db.execute(total_query)
     total = total_result.scalar()
 
-    return {"total": total, "by_status": counts}
+    from app.models import SLAStatus as SLAStatusEnum
+
+    breached_query = (
+        select(func.count(Ticket.id))
+        .join(TicketSLA, TicketSLA.ticket_id == Ticket.id)
+        .where(
+            Ticket.status.in_([TicketStatus.pending, TicketStatus.in_progress]),
+            (TicketSLA.response_breached.is_(True)) | (TicketSLA.resolution_breached.is_(True)),
+        )
+    )
+    breached_result = await db.execute(breached_query)
+    breached_count = breached_result.scalar() or 0
+
+    return {
+        "total": total,
+        "by_status": counts,
+        "sla_breached": breached_count,
+    }
 
 
-@router.get("/{ticket_id}", response_model=TicketDetailOut)
+@router.get("/{ticket_id}", response_model=TicketDetailWithSLAOut)
 async def get_ticket(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
@@ -91,6 +147,7 @@ async def get_ticket(
             selectinload(Ticket.messages).selectinload(TicketMessage.sender),
             selectinload(Ticket.actions),
             selectinload(Ticket.rating),
+            selectinload(Ticket.sla).selectinload(TicketSLA.rule),
         )
         .where(Ticket.id == ticket_id)
     )
@@ -103,16 +160,30 @@ async def get_ticket(
     if current_user.role == UserRole.agent and ticket.agent_id != current_user.id and ticket.status != TicketStatus.pending:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your ticket")
 
-    return ticket
+    if not ticket.sla and ticket.status not in (TicketStatus.resolved, TicketStatus.closed):
+        ticket_sla = await create_ticket_sla(db, ticket)
+        ticket.sla = ticket_sla
+
+    data = _enrich_ticket_with_sla(ticket)
+    data["messages"] = ticket.messages
+    data["actions"] = ticket.actions
+    data["rating"] = ticket.rating
+    return data
 
 
-@router.post("/{ticket_id}/accept", response_model=TicketOut)
+@router.post("/{ticket_id}/accept", response_model=TicketWithSLAOut)
 async def accept_ticket(
     ticket_id: int,
     current_user: User = Depends(require_role(UserRole.agent, UserRole.admin)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    result = await db.execute(
+        select(Ticket).options(
+            selectinload(Ticket.user),
+            selectinload(Ticket.agent),
+            selectinload(Ticket.sla).selectinload(TicketSLA.rule),
+        ).where(Ticket.id == ticket_id)
+    )
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
@@ -125,16 +196,31 @@ async def accept_ticket(
     ticket.agent_id = current_user.id
     await db.commit()
     await db.refresh(ticket)
-    return ticket
+
+    await mark_first_response(db, ticket)
+
+    if not ticket.sla:
+        sla_result = await db.execute(
+            select(TicketSLA).options(selectinload(TicketSLA.rule)).where(TicketSLA.ticket_id == ticket.id)
+        )
+        ticket.sla = sla_result.scalar_one_or_none()
+
+    return _enrich_ticket_with_sla(ticket)
 
 
-@router.post("/{ticket_id}/resolve", response_model=TicketOut)
+@router.post("/{ticket_id}/resolve", response_model=TicketWithSLAOut)
 async def resolve_ticket(
     ticket_id: int,
     current_user: User = Depends(require_role(UserRole.agent, UserRole.admin)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    result = await db.execute(
+        select(Ticket).options(
+            selectinload(Ticket.user),
+            selectinload(Ticket.agent),
+            selectinload(Ticket.sla).selectinload(TicketSLA.rule),
+        ).where(Ticket.id == ticket_id)
+    )
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
@@ -144,16 +230,31 @@ async def resolve_ticket(
     ticket.status = TicketStatus.resolved
     await db.commit()
     await db.refresh(ticket)
-    return ticket
+
+    await mark_resolved(db, ticket)
+
+    if not ticket.sla:
+        sla_result = await db.execute(
+            select(TicketSLA).options(selectinload(TicketSLA.rule)).where(TicketSLA.ticket_id == ticket.id)
+        )
+        ticket.sla = sla_result.scalar_one_or_none()
+
+    return _enrich_ticket_with_sla(ticket)
 
 
-@router.post("/{ticket_id}/close", response_model=TicketOut)
+@router.post("/{ticket_id}/close", response_model=TicketWithSLAOut)
 async def close_ticket(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    result = await db.execute(
+        select(Ticket).options(
+            selectinload(Ticket.user),
+            selectinload(Ticket.agent),
+            selectinload(Ticket.sla).selectinload(TicketSLA.rule),
+        ).where(Ticket.id == ticket_id)
+    )
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
@@ -173,7 +274,8 @@ async def close_ticket(
     db.add(action)
     await db.commit()
     await db.refresh(ticket)
-    return ticket
+
+    return _enrich_ticket_with_sla(ticket)
 
 
 @router.post("/{ticket_id}/escalate", response_model=ActionOut, status_code=status.HTTP_201_CREATED)
@@ -247,13 +349,19 @@ async def transfer_ticket(
     return action
 
 
-@router.post("/{ticket_id}/reopen", response_model=TicketOut)
+@router.post("/{ticket_id}/reopen", response_model=TicketWithSLAOut)
 async def reopen_ticket(
     ticket_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
+    result = await db.execute(
+        select(Ticket).options(
+            selectinload(Ticket.user),
+            selectinload(Ticket.agent),
+            selectinload(Ticket.sla).selectinload(TicketSLA.rule),
+        ).where(Ticket.id == ticket_id)
+    )
     ticket = result.scalar_one_or_none()
     if not ticket:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
@@ -271,4 +379,5 @@ async def reopen_ticket(
     db.add(action)
     await db.commit()
     await db.refresh(ticket)
-    return ticket
+
+    return _enrich_ticket_with_sla(ticket)

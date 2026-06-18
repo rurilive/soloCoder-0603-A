@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import auth, tickets, messages, ratings, recommendations
+from app.routers import auth, tickets, messages, ratings, recommendations, sla
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
 app.include_router(messages.router, prefix="/api/tickets", tags=["messages"])
 app.include_router(ratings.router, prefix="/api/ratings", tags=["ratings"])
 app.include_router(recommendations.router, prefix="/api/recommendations", tags=["recommendations"])
+app.include_router(sla.router, prefix="/api/sla", tags=["sla"])
 
 
 @app.get("/api/health")

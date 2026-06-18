@@ -65,6 +65,32 @@ const priorityLabels = {
   urgent: '紧急',
 };
 
+const slaStatusConfig = {
+  on_track: { color: 'green', label: '正常' },
+  response_warning: { color: 'orange', label: '响应预警' },
+  response_breached: { color: 'red', label: '响应超时' },
+  resolution_warning: { color: 'orange', label: '解决预警' },
+  resolution_breached: { color: 'red', label: '解决超时' },
+  resolved: { color: 'default', label: '已完成' },
+};
+
+function formatRemainingMinutes(minutes) {
+  if (minutes == null) return '-';
+  if (minutes <= 0) return '已超时';
+  const absMin = Math.abs(minutes);
+  if (absMin >= 1440) {
+    const days = Math.floor(absMin / 1440);
+    const hrs = Math.floor((absMin % 1440) / 60);
+    return `${days}天${hrs > 0 ? hrs + '小时' : ''}`;
+  }
+  if (absMin >= 60) {
+    const hrs = Math.floor(absMin / 60);
+    const mins = Math.floor(absMin % 60);
+    return `${hrs}小时${mins > 0 ? mins + '分' : ''}`;
+  }
+  return `${Math.round(absMin)}分钟`;
+}
+
 export default function TicketDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -262,6 +288,47 @@ export default function TicketDetail() {
           <Descriptions.Item label="更新时间">
             {dayjs(ticket.updated_at).format('YYYY-MM-DD HH:mm:ss')}
           </Descriptions.Item>
+          {ticket.sla && (
+            <>
+              <Descriptions.Item label="SLA状态">
+                <Space>
+                  <Tag color={slaStatusConfig[ticket.sla.sla_status]?.color || 'default'}>
+                    {slaStatusConfig[ticket.sla.sla_status]?.label || ticket.sla.sla_status}
+                  </Tag>
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="响应截止时间">
+                {ticket.sla.response_deadline
+                  ? dayjs(ticket.sla.response_deadline).format('YYYY-MM-DD HH:mm')
+                  : '-'}
+                {ticket.sla.response_remaining_minutes != null && (
+                  <div style={{ fontSize: 12, color: ticket.sla.response_remaining_minutes <= 0 ? '#ff4d4f' : '#666' }}>
+                    剩余：{formatRemainingMinutes(ticket.sla.response_remaining_minutes)}
+                  </div>
+                )}
+                {ticket.sla.first_response_at && (
+                  <div style={{ fontSize: 12, color: '#52c41a' }}>
+                    已响应：{dayjs(ticket.sla.first_response_at).format('HH:mm')}
+                  </div>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="解决截止时间">
+                {ticket.sla.resolution_deadline
+                  ? dayjs(ticket.sla.resolution_deadline).format('YYYY-MM-DD HH:mm')
+                  : '-'}
+                {ticket.sla.resolution_remaining_minutes != null && (
+                  <div style={{ fontSize: 12, color: ticket.sla.resolution_remaining_minutes <= 0 ? '#ff4d4f' : '#666' }}>
+                    剩余：{formatRemainingMinutes(ticket.sla.resolution_remaining_minutes)}
+                  </div>
+                )}
+                {ticket.sla.resolved_at && (
+                  <div style={{ fontSize: 12, color: '#52c41a' }}>
+                    已解决：{dayjs(ticket.sla.resolved_at).format('HH:mm')}
+                  </div>
+                )}
+              </Descriptions.Item>
+            </>
+          )}
           <Descriptions.Item label="描述" span={3}>
             {ticket.description}
           </Descriptions.Item>

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -32,6 +32,23 @@ class ActionType(str, enum.Enum):
     transfer = "transfer"
     close = "close"
     reopen = "reopen"
+
+
+class SLAEventType(str, enum.Enum):
+    response_warning = "response_warning"
+    response_breached = "response_breached"
+    resolution_warning = "resolution_warning"
+    resolution_breached = "resolution_breached"
+    auto_escalated = "auto_escalated"
+
+
+class SLAStatus(str, enum.Enum):
+    on_track = "on_track"
+    response_warning = "response_warning"
+    response_breached = "response_breached"
+    resolution_warning = "resolution_warning"
+    resolution_breached = "resolution_breached"
+    resolved = "resolved"
 
 
 class User(Base):
@@ -82,6 +99,7 @@ class Ticket(Base):
         "TicketAction", back_populates="ticket", order_by="TicketAction.created_at"
     )
     rating: Mapped["TicketRating | None"] = relationship("TicketRating", back_populates="ticket", uselist=False)
+    sla: Mapped["TicketSLA | None"] = relationship("TicketSLA", back_populates="ticket", uselist=False)
 
 
 class TicketMessage(Base):
@@ -140,3 +158,59 @@ class TicketRating(Base):
 
     ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="rating")
     user: Mapped["User"] = relationship("User", back_populates="ratings")
+
+
+class SLARule(Base):
+    __tablename__ = "sla_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    priority: Mapped[TicketPriority] = mapped_column(Enum(TicketPriority), nullable=False)
+    response_time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    resolution_time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    warning_threshold: Mapped[float] = mapped_column(Float, default=0.75, nullable=False)
+    auto_escalate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    sla_tickets: Mapped[list["TicketSLA"]] = relationship("TicketSLA", back_populates="rule")
+
+
+class TicketSLA(Base):
+    __tablename__ = "ticket_sla"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, ForeignKey("tickets.id"), unique=True, nullable=False)
+    sla_rule_id: Mapped[int] = mapped_column(Integer, ForeignKey("sla_rules.id"), nullable=False)
+    response_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolution_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_response_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_breached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolution_breached: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    response_warning_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolution_warning_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    escalated_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="sla")
+    rule: Mapped["SLARule"] = relationship("SLARule", back_populates="sla_tickets")
+    events: Mapped[list["SLAEvent"]] = relationship("SLAEvent", back_populates="ticket_sla")
+
+
+class SLAEvent(Base):
+    __tablename__ = "sla_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_sla_id: Mapped[int] = mapped_column(Integer, ForeignKey("ticket_sla.id"), nullable=False)
+    event_type: Mapped[SLAEventType] = mapped_column(Enum(SLAEventType), nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket_sla: Mapped["TicketSLA"] = relationship("TicketSLA", back_populates="events")

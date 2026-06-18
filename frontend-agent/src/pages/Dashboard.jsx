@@ -6,6 +6,7 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
   StopOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { getTicketStats } from '../api';
 
@@ -70,6 +71,16 @@ export default function Dashboard() {
             </Card>
           </Col>
         ))}
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="SLA超时"
+              value={stats?.sla_breached || 0}
+              prefix={<WarningOutlined />}
+              valueStyle={{ color: '#ff4d4f' }}
+            />
+          </Card>
+        </Col>
       </Row>
     </div>
   );

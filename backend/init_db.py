@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password
 from app.database import Base, async_session, engine
-from app.models import KnowledgeBase, User, UserRole
+from app.models import KnowledgeBase, SLARule, TicketPriority, User, UserRole
 
 SAMPLE_KB_ARTICLES = [
     {
@@ -113,6 +113,44 @@ async def init():
             if not result.scalar_one_or_none():
                 article = KnowledgeBase(**article_data)
                 session.add(article)
+
+        DEFAULT_SLA_RULES = [
+            {"category": "general", "priority": TicketPriority.low, "response": 120, "resolution": 2880},
+            {"category": "general", "priority": TicketPriority.medium, "response": 60, "resolution": 1440},
+            {"category": "general", "priority": TicketPriority.high, "response": 30, "resolution": 480},
+            {"category": "general", "priority": TicketPriority.urgent, "response": 15, "resolution": 120},
+            {"category": "technical", "priority": TicketPriority.low, "response": 120, "resolution": 4320},
+            {"category": "technical", "priority": TicketPriority.medium, "response": 60, "resolution": 2880},
+            {"category": "technical", "priority": TicketPriority.high, "response": 30, "resolution": 720},
+            {"category": "technical", "priority": TicketPriority.urgent, "response": 15, "resolution": 240},
+            {"category": "billing", "priority": TicketPriority.low, "response": 120, "resolution": 2880},
+            {"category": "billing", "priority": TicketPriority.medium, "response": 60, "resolution": 1440},
+            {"category": "billing", "priority": TicketPriority.high, "response": 20, "resolution": 360},
+            {"category": "billing", "priority": TicketPriority.urgent, "response": 10, "resolution": 60},
+            {"category": "account", "priority": TicketPriority.low, "response": 120, "resolution": 2880},
+            {"category": "account", "priority": TicketPriority.medium, "response": 60, "resolution": 1440},
+            {"category": "account", "priority": TicketPriority.high, "response": 20, "resolution": 360},
+            {"category": "account", "priority": TicketPriority.urgent, "response": 10, "resolution": 120},
+        ]
+
+        for sla_data in DEFAULT_SLA_RULES:
+            result = await session.execute(
+                select(SLARule).where(
+                    SLARule.category == sla_data["category"],
+                    SLARule.priority == sla_data["priority"],
+                )
+            )
+            if not result.scalar_one_or_none():
+                rule = SLARule(
+                    category=sla_data["category"],
+                    priority=sla_data["priority"],
+                    response_time_minutes=sla_data["response"],
+                    resolution_time_minutes=sla_data["resolution"],
+                    warning_threshold=0.75,
+                    auto_escalate=False,
+                    is_active=True,
+                )
+                session.add(rule)
 
         await session.commit()
 
