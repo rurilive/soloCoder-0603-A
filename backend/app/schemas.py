@@ -86,6 +86,7 @@ class ActionCreate(BaseModel):
     action_type: ActionType
     to_user_id: Optional[int] = None
     reason: Optional[str] = None
+    priority: Optional[TicketPriority] = None
 
 
 class ActionOut(BaseModel):

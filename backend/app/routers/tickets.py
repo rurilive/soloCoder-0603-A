@@ -190,8 +190,20 @@ async def escalate_ticket(
 
     priority_map = {"low": 0, "medium": 1, "high": 2, "urgent": 3}
     current_level = priority_map.get(ticket.priority.value, 0)
-    if current_level < 2:
+
+    if body.priority is not None:
+        target_level = priority_map.get(body.priority.value, 0)
+        if target_level <= current_level:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Escalate priority must be higher than current ({ticket.priority.value})",
+            )
+        ticket.priority = body.priority
+    elif current_level < 2:
         ticket.priority = TicketPriority.high
+
+    if body.to_user_id is not None:
+        ticket.agent_id = body.to_user_id
 
     action = TicketAction(
         ticket_id=ticket.id,
