@@ -39,12 +39,6 @@ class TicketCreate(BaseModel):
     category: str = "general"
 
 
-class TicketUpdate(BaseModel):
-    status: Optional[TicketStatus] = None
-    priority: Optional[TicketPriority] = None
-    agent_id: Optional[int] = None
-
-
 class TicketOut(BaseModel):
     id: int
     title: str

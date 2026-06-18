@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.auth import User, get_current_user, require_role
 from app.database import get_db
 from app.models import ActionType, Ticket, TicketAction, TicketMessage, TicketPriority, TicketStatus, UserRole
-from app.schemas import ActionCreate, ActionOut, TicketCreate, TicketDetailOut, TicketOut, TicketUpdate
+from app.schemas import ActionCreate, ActionOut, TicketCreate, TicketDetailOut, TicketOut
 
 router = APIRouter()
 
@@ -103,33 +103,6 @@ async def get_ticket(
     if current_user.role == UserRole.agent and ticket.agent_id != current_user.id and ticket.status != TicketStatus.pending:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your ticket")
 
-    return ticket
-
-
-@router.patch("/{ticket_id}", response_model=TicketOut)
-async def update_ticket(
-    ticket_id: int,
-    body: TicketUpdate,
-    current_user: User = Depends(require_role(UserRole.agent, UserRole.admin)),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(Ticket).where(Ticket.id == ticket_id))
-    ticket = result.scalar_one_or_none()
-    if not ticket:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
-
-    if body.status is not None:
-        ticket.status = body.status
-    if body.priority is not None:
-        ticket.priority = body.priority
-    if body.agent_id is not None:
-        ticket.agent_id = body.agent_id
-
-    if body.status == TicketStatus.in_progress and not ticket.agent_id:
-        ticket.agent_id = current_user.id
-
-    await db.commit()
-    await db.refresh(ticket)
     return ticket
 
 
