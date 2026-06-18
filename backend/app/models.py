@@ -114,6 +114,20 @@ class TicketAction(Base):
     to_user: Mapped["User | None"] = relationship("User", foreign_keys=[to_user_id])
 
 
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_base"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="general", nullable=False)
+    tags: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TicketRating(Base):
     __tablename__ = "ticket_ratings"
 

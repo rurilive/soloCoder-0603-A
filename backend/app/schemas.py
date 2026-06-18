@@ -115,3 +115,44 @@ class RatingOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class KnowledgeBaseOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    category: str
+    tags: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RecommendedKBOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    category: str
+    tags: Optional[str] = None
+    score: float
+
+
+class RecommendedTicketOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    category: str
+    status: TicketStatus
+    score: float
+
+
+class RecommendationRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    category: Optional[str] = None
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class RecommendationResponse(BaseModel):
+    knowledge_articles: list[RecommendedKBOut] = []
+    similar_tickets: list[RecommendedTicketOut] = []
