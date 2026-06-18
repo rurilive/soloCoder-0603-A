@@ -17,6 +17,8 @@ STOP_WORDS = {
     "的", "了", "在", "是", "我", "有", "和", "就", "不", "都", "一",
     "也", "很", "到", "要", "你", "会", "着", "没有",
     "自己", "这", "他", "她", "它", "们", "那", "些",
+    "什么", "怎么", "如何", "为什么", "多少", "哪里", "哪个", "谁", "何时",
+    "这个", "那个", "这些", "那些",
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
     "have", "has", "had", "do", "does", "did", "will", "would", "could",
     "should", "may", "might", "shall", "can", "need", "dare", "ought",
@@ -44,6 +46,10 @@ def _extract_keywords(query: str) -> list[str]:
         seen.add(w)
         keywords.append(w)
     return keywords
+
+
+def _escape_like(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _compute_score(text: str, keywords: list[str]) -> float:
@@ -85,10 +91,11 @@ async def _search_knowledge_base(
 ) -> list[RecommendedKBOut]:
     conditions = []
     for kw in keywords[:8]:
-        pattern = f"%{kw}%"
-        conditions.append(KnowledgeBase.title.ilike(pattern))
-        conditions.append(KnowledgeBase.content.ilike(pattern))
-        conditions.append(KnowledgeBase.tags.ilike(pattern))
+        escaped_kw = _escape_like(kw)
+        pattern = f"%{escaped_kw}%"
+        conditions.append(KnowledgeBase.title.ilike(pattern, escape="\\"))
+        conditions.append(KnowledgeBase.content.ilike(pattern, escape="\\"))
+        conditions.append(KnowledgeBase.tags.ilike(pattern, escape="\\"))
 
     query = select(KnowledgeBase).where(or_(*conditions))
     if category:
@@ -128,9 +135,10 @@ async def _search_resolved_tickets(
 ) -> list[RecommendedTicketOut]:
     conditions = []
     for kw in keywords[:8]:
-        pattern = f"%{kw}%"
-        conditions.append(Ticket.title.ilike(pattern))
-        conditions.append(Ticket.description.ilike(pattern))
+        escaped_kw = _escape_like(kw)
+        pattern = f"%{escaped_kw}%"
+        conditions.append(Ticket.title.ilike(pattern, escape="\\"))
+        conditions.append(Ticket.description.ilike(pattern, escape="\\"))
 
     query = select(Ticket).where(
         or_(*conditions),
