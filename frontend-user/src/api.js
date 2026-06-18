@@ -35,6 +35,6 @@ export const getMessages = (ticketId) => api.get(`/tickets/${ticketId}/messages`
 export const rateTicket = (ticketId, data) => api.post(`/ratings/${ticketId}/rating`, data)
 export const closeTicket = (ticketId) => api.post(`/tickets/${ticketId}/close`)
 export const reopenTicket = (ticketId) => api.post(`/tickets/${ticketId}/reopen`)
-export const getRecommendations = (data) => api.post('/recommendations/recommendations', data)
+export const getRecommendations = (data) => api.post('/recommendations/', data)
 
 export default api
