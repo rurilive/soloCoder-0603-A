@@ -14,17 +14,14 @@ from app.schemas import RecommendationRequest, RecommendationResponse, Recommend
 router = APIRouter()
 
 STOP_WORDS = {
-    "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一", "一个",
-    "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好",
-    "自己", "这", "他", "她", "它", "们", "那", "些", "什么", "怎么", "如何",
-    "请问", "您好", "你好", "谢谢", "麻烦", "请问一下", "一下", "可以", "能",
-    "应该", "可能", "我想", "帮忙", "帮助", "解决", "问题", "一下",
+    "的", "了", "在", "是", "我", "有", "和", "就", "不", "都", "一",
+    "也", "很", "到", "要", "你", "会", "着", "没有",
+    "自己", "这", "他", "她", "它", "们", "那", "些",
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
     "have", "has", "had", "do", "does", "did", "will", "would", "could",
     "should", "may", "might", "shall", "can", "need", "dare", "ought",
     "and", "or", "but", "if", "of", "at", "by", "for", "with", "about",
     "to", "from", "in", "on", "it", "its", "i", "me", "my", "we", "our",
-    "please", "help", "issue", "problem", "question", "how", "what", "why",
 }
 
 
