@@ -118,7 +118,7 @@ async def create_annotation(
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
+    if not has_document_permission(db, current_user, doc, PermissionLevel.EDIT):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     if doc_id != data.document_id:
         raise HTTPException(status_code=400, detail="Document ID mismatch")
@@ -244,7 +244,7 @@ async def create_reply(
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
+    if not has_document_permission(db, current_user, doc, PermissionLevel.EDIT):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     ann = db.query(Annotation).filter(
         Annotation.id == ann_id, Annotation.document_id == doc_id
@@ -394,6 +394,8 @@ async def websocket_endpoint(
 ):
     from app.database import SessionLocal
 
+    user_id: Optional[int] = None
+
     db = SessionLocal()
     try:
         if not token:
@@ -409,17 +411,22 @@ async def websocket_endpoint(
             await websocket.close(code=1008, reason="No permission")
             return
 
-        await manager.connect(websocket, doc_id, user.id)
-        try:
-            while True:
-                data = await websocket.receive_text()
-                try:
-                    msg = json.loads(data)
-                    if msg.get("type") == "ping":
-                        await websocket.send_text(json.dumps({"type": "pong"}))
-                except json.JSONDecodeError:
-                    pass
-        except WebSocketDisconnect:
-            manager.disconnect(websocket, doc_id)
+        user_id = user.id
     finally:
         db.close()
+
+    if user_id is None:
+        return
+
+    await manager.connect(websocket, doc_id, user_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "ping":
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, doc_id)
