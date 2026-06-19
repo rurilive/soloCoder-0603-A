@@ -91,15 +91,17 @@ async def get_current_admin(
 
 def has_document_permission(
     db: Session,
-    user: User,
+    user: Optional[User],
     document: Document,
     required_level: PermissionLevel = PermissionLevel.VIEW,
 ) -> bool:
+    if document.is_public and required_level == PermissionLevel.VIEW:
+        return True
+    if not user:
+        return False
     if is_admin(user):
         return True
     if document.owner_id == user.id:
-        return True
-    if document.is_public and required_level == PermissionLevel.VIEW:
         return True
     permission = (
         db.query(DocumentPermission)
@@ -113,3 +115,24 @@ def has_document_permission(
         return False
     level_order = {PermissionLevel.VIEW: 1, PermissionLevel.EDIT: 2, PermissionLevel.OWNER: 3}
     return level_order.get(permission.permission_level, 0) >= level_order.get(required_level, 0)
+
+
+async def get_optional_current_user(
+    request: Request,
+    header_token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    token = header_token or request.query_params.get("token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        user = db.query(User).filter(User.username == username).first()
+        if user and user.is_active:
+            return user
+    except JWTError:
+        return None
+    return None

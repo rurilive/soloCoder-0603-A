@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Document, DocumentStatus, DocumentPermission, PermissionLevel
 from app.schemas import DocumentResponse, DocumentUpdate, PermissionCreate, PermissionResponse
-from app.security import get_current_active_user, has_document_permission, is_admin
+from app.security import get_current_active_user, has_document_permission, is_admin, get_optional_current_user
 from app.config import get_settings
 from app.converter import (
     is_allowed_file,
@@ -189,7 +189,7 @@ def preview_document(
     doc_id: int,
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
@@ -218,7 +218,7 @@ def preview_document(
 def preview_info(
     doc_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
