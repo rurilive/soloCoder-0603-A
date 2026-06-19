@@ -96,6 +96,27 @@ async def init():
             )
             session.add(agent)
 
+        result = await session.execute(select(User).where(User.username == "agent2"))
+        if not result.scalar_one_or_none():
+            agent2 = User(
+                username="agent2",
+                email="agent2@example.com",
+                password_hash=hash_password("agent123"),
+                role=UserRole.agent,
+            )
+            session.add(agent2)
+
+        result = await session.execute(select(User).where(User.username == "senior_agent"))
+        if not result.scalar_one_or_none():
+            senior = User(
+                username="senior_agent",
+                email="senior@example.com",
+                password_hash=hash_password("senior123"),
+                role=UserRole.agent,
+                is_senior_agent=True,
+            )
+            session.add(senior)
+
         result = await session.execute(select(User).where(User.username == "user1"))
         if not result.scalar_one_or_none():
             user = User(
@@ -155,10 +176,13 @@ async def init():
         await session.commit()
 
     print("Database initialized with default users and knowledge base:")
-    print("  admin  / admin123  (admin)")
-    print("  agent1 / agent123  (agent)")
-    print("  user1  / user123   (user)")
+    print("  admin         / admin123   (admin)")
+    print("  agent1        / agent123   (agent)")
+    print("  agent2        / agent123   (agent)")
+    print("  senior_agent  / senior123  (senior agent)")
+    print("  user1         / user123    (user)")
     print(f"  {len(SAMPLE_KB_ARTICLES)} knowledge base articles seeded")
+    print("  16 SLA rules (4 categories x 4 priorities)")
 
 
 if __name__ == "__main__":

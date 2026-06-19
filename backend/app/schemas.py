@@ -22,6 +22,7 @@ class UserOut(BaseModel):
     username: str
     email: str
     role: UserRole
+    is_senior_agent: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -7,13 +7,16 @@ from app.config import settings
 from app.database import engine
 from app.models import Base
 from app.routers import auth, tickets, messages, ratings, recommendations, sla
+from app.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(title="Ticket System API", version="0.1.0", lifespan=lifespan)

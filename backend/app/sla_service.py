@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import SLAEvent, SLAEventType, SLAStatus, SLARule, Ticket, TicketPriority, TicketSLA, TicketStatus
+from app.models import SLAEvent, SLAEventType, SLAStatus, SLARule, Ticket, TicketAction, TicketPriority, TicketSLA, TicketStatus, User, UserRole, ActionType
 from app.schemas import SLAStatusOut, SLARuleCreate, TicketSLADetailOut
 
 
@@ -211,7 +211,7 @@ async def mark_resolved(db: AsyncSession, ticket: Ticket) -> None:
     await db.commit()
 
 
-async def check_and_update_sla(db: AsyncSession, ticket_sla: TicketSLA) -> TicketSLADetailOut | None:
+async def check_and_update_sla(db: AsyncSession, ticket_sla: TicketSLA) -> TicketSLA | None:
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(TicketSLA)
@@ -308,3 +308,251 @@ async def create_sla_rule(db: AsyncSession, body: SLARuleCreate) -> SLARule:
     await db.commit()
     await db.refresh(rule)
     return rule
+
+
+PRIORITY_ORDER = [
+    TicketPriority.low,
+    TicketPriority.medium,
+    TicketPriority.high,
+    TicketPriority.urgent,
+]
+
+
+def _get_next_priority(current: TicketPriority) -> TicketPriority | None:
+    idx = PRIORITY_ORDER.index(current) if current in PRIORITY_ORDER else -1
+    if idx >= 0 and idx < len(PRIORITY_ORDER) - 1:
+        return PRIORITY_ORDER[idx + 1]
+    return None
+
+
+async def _find_least_loaded_senior_agent(db: AsyncSession) -> User | None:
+    result = await db.execute(
+        select(User)
+        .where(User.role == UserRole.agent, User.is_senior_agent.is_(True))
+    )
+    senior_agents = result.scalars().all()
+    if not senior_agents:
+        return None
+
+    agent_loads = []
+    for agent in senior_agents:
+        count_result = await db.execute(
+            select(func.count(Ticket.id)).where(
+                Ticket.agent_id == agent.id,
+                Ticket.status.in_([TicketStatus.pending, TicketStatus.in_progress]),
+            )
+        )
+        load = count_result.scalar() or 0
+        agent_loads.append((load, agent))
+
+    agent_loads.sort(key=lambda x: x[0])
+    return agent_loads[0][1]
+
+
+async def auto_escalate_response_breach(db: AsyncSession, ticket: Ticket, ticket_sla: TicketSLA) -> bool:
+    if not ticket_sla.rule or not ticket_sla.rule.auto_escalate:
+        return False
+    if ticket_sla.escalated_count > 0:
+        return False
+
+    next_priority = _get_next_priority(ticket.priority)
+    if not next_priority:
+        return False
+
+    old_priority = ticket.priority
+    ticket.priority = next_priority
+    ticket_sla.escalated_count = 1
+
+    event = SLAEvent(
+        ticket_sla_id=ticket_sla.id,
+        event_type=SLAEventType.auto_escalated,
+        message=f"响应超时自动升级：优先级从 {old_priority.value} 提升至 {next_priority.value}",
+    )
+    db.add(event)
+
+    action = TicketAction(
+        ticket_id=ticket.id,
+        action_type=ActionType.escalate,
+        from_user_id=None,
+        reason="SLA响应超时自动升级",
+    )
+    db.add(action)
+
+    return True
+
+
+async def auto_escalate_resolution_breach(db: AsyncSession, ticket: Ticket, ticket_sla: TicketSLA) -> bool:
+    if not ticket_sla.rule or not ticket_sla.rule.auto_escalate:
+        return False
+    if ticket_sla.escalated_count >= 2:
+        return False
+
+    senior_agent = await _find_least_loaded_senior_agent(db)
+    if not senior_agent:
+        return False
+
+    old_agent_id = ticket.agent_id
+    old_escalated = ticket_sla.escalated_count
+
+    ticket.agent_id = senior_agent.id
+    if ticket.status == TicketStatus.pending:
+        ticket.status = TicketStatus.in_progress
+    ticket_sla.escalated_count = 2
+
+    event = SLAEvent(
+        ticket_sla_id=ticket_sla.id,
+        event_type=SLAEventType.auto_escalated,
+        message=f"解决超时自动转派：由高级客服 {senior_agent.username} 接手处理",
+    )
+    db.add(event)
+
+    action = TicketAction(
+        ticket_id=ticket.id,
+        action_type=ActionType.transfer,
+        from_user_id=old_agent_id,
+        to_user_id=senior_agent.id,
+        reason="SLA解决超时自动转派高级客服",
+    )
+    db.add(action)
+
+    return True
+
+
+async def check_and_update_sla(db: AsyncSession, ticket_sla: TicketSLA) -> TicketSLA | None:
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TicketSLA)
+        .options(selectinload(TicketSLA.rule), selectinload(TicketSLA.events))
+        .where(TicketSLA.id == ticket_sla.id)
+    )
+    ticket_sla = result.scalar_one_or_none()
+    if not ticket_sla:
+        return None
+
+    ticket_result = await db.execute(
+        select(Ticket).where(Ticket.id == ticket_sla.ticket_id)
+    )
+    ticket = ticket_result.scalar_one_or_none()
+    if not ticket:
+        return None
+
+    if ticket.status in (TicketStatus.resolved, TicketStatus.closed):
+        return ticket_sla
+
+    changed = False
+
+    if (
+        not ticket_sla.first_response_at
+        and now > ticket_sla.response_deadline
+        and not ticket_sla.response_breached
+    ):
+        ticket_sla.response_breached = True
+        event = SLAEvent(
+            ticket_sla_id=ticket_sla.id,
+            event_type=SLAEventType.response_breached,
+            message="首次响应超时",
+        )
+        db.add(event)
+        changed = True
+
+        if await auto_escalate_response_breach(db, ticket, ticket_sla):
+            changed = True
+
+    if now > ticket_sla.resolution_deadline and not ticket_sla.resolution_breached:
+        ticket_sla.resolution_breached = True
+        event = SLAEvent(
+            ticket_sla_id=ticket_sla.id,
+            event_type=SLAEventType.resolution_breached,
+            message="解决超时",
+        )
+        db.add(event)
+        changed = True
+
+        if await auto_escalate_resolution_breach(db, ticket, ticket_sla):
+            changed = True
+
+    rule = ticket_sla.rule
+    if rule and rule.warning_threshold:
+        if (
+            not ticket_sla.first_response_at
+            and not ticket_sla.response_warning_sent
+        ):
+            response_elapsed = (now - ticket_sla.created_at).total_seconds() / 60.0
+            if response_elapsed >= rule.response_time_minutes * rule.warning_threshold:
+                ticket_sla.response_warning_sent = True
+                event = SLAEvent(
+                    ticket_sla_id=ticket_sla.id,
+                    event_type=SLAEventType.response_warning,
+                    message=f"响应时间已超过{int(rule.warning_threshold * 100)}%，请注意及时处理",
+                )
+                db.add(event)
+                changed = True
+
+        if not ticket_sla.resolution_warning_sent:
+            resolution_elapsed = (now - ticket_sla.created_at).total_seconds() / 60.0
+            if resolution_elapsed >= rule.resolution_time_minutes * rule.warning_threshold:
+                ticket_sla.resolution_warning_sent = True
+                event = SLAEvent(
+                    ticket_sla_id=ticket_sla.id,
+                    event_type=SLAEventType.resolution_warning,
+                    message=f"解决时间已超过{int(rule.warning_threshold * 100)}%，请注意及时处理",
+                )
+                db.add(event)
+                changed = True
+
+    if changed:
+        await db.commit()
+        await db.refresh(ticket_sla)
+
+    return ticket_sla
+
+
+async def scan_all_active_tickets_sla(db: AsyncSession) -> dict:
+    result = await db.execute(
+        select(TicketSLA)
+        .options(selectinload(TicketSLA.rule), selectinload(TicketSLA.events))
+        .join(Ticket, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            Ticket.status.in_([TicketStatus.pending, TicketStatus.in_progress]),
+            TicketSLA.resolved_at.is_(None),
+        )
+    )
+    sla_records = result.scalars().all()
+
+    total_scanned = len(sla_records)
+    response_breached = 0
+    resolution_breached = 0
+    auto_escalated = 0
+    warnings_sent = 0
+
+    for sla in sla_records:
+        old_response_breached = sla.response_breached
+        old_resolution_breached = sla.resolution_breached
+        old_escalated_count = sla.escalated_count
+        old_warnings = (
+            (1 if sla.response_warning_sent else 0)
+            + (1 if sla.resolution_warning_sent else 0)
+        )
+
+        updated = await check_and_update_sla(db, sla)
+        if updated:
+            if updated.response_breached and not old_response_breached:
+                response_breached += 1
+            if updated.resolution_breached and not old_resolution_breached:
+                resolution_breached += 1
+            if updated.escalated_count > old_escalated_count:
+                auto_escalated += 1
+            new_warnings = (
+                (1 if updated.response_warning_sent else 0)
+                + (1 if updated.resolution_warning_sent else 0)
+            )
+            if new_warnings > old_warnings:
+                warnings_sent += 1
+
+    return {
+        "total_scanned": total_scanned,
+        "response_breached": response_breached,
+        "resolution_breached": resolution_breached,
+        "auto_escalated": auto_escalated,
+        "warnings_sent": warnings_sent,
+    }
