@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
 from app.models import UserRole, DocumentStatus, PermissionLevel
@@ -109,3 +109,67 @@ class PermissionResponse(PermissionBase):
 class ConvertRequest(BaseModel):
     watermark_text: Optional[str] = None
     watermark_enabled: bool = False
+
+
+class UserBrief(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AnnotationBase(BaseModel):
+    document_id: int
+    page: int = 1
+    position_x: int = 0
+    position_y: int = 0
+    selected_text: Optional[str] = None
+    content: str
+    color: Optional[str] = "#fef3c7"
+
+
+class AnnotationCreate(AnnotationBase):
+    pass
+
+
+class AnnotationUpdate(BaseModel):
+    content: Optional[str] = None
+    color: Optional[str] = None
+    is_resolved: Optional[bool] = None
+
+
+class AnnotationReplyBase(BaseModel):
+    content: str
+
+
+class AnnotationReplyCreate(AnnotationReplyBase):
+    pass
+
+
+class AnnotationReplyUpdate(BaseModel):
+    content: Optional[str] = None
+
+
+class AnnotationReplyResponse(AnnotationReplyBase):
+    id: int
+    annotation_id: int
+    author: UserBrief
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AnnotationResponse(AnnotationBase):
+    id: int
+    author: UserBrief
+    is_resolved: bool
+    created_at: datetime
+    updated_at: datetime
+    replies: List[AnnotationReplyResponse] = []
+
+    class Config:
+        from_attributes = True

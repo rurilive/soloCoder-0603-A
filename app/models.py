@@ -76,3 +76,37 @@ class DocumentPermission(Base):
 
     document = relationship("Document", back_populates="permissions")
     user = relationship("User", back_populates="permissions")
+
+
+class Annotation(Base):
+    __tablename__ = "annotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    page = Column(Integer, default=1)
+    position_x = Column(Integer, default=0)
+    position_y = Column(Integer, default=0)
+    selected_text = Column(Text)
+    content = Column(Text, nullable=False)
+    color = Column(String(20), default="#fef3c7")
+    is_resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    author = relationship("User")
+    replies = relationship("AnnotationReply", back_populates="annotation", cascade="all, delete-orphan")
+
+
+class AnnotationReply(Base):
+    __tablename__ = "annotation_replies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    annotation_id = Column(Integer, ForeignKey("annotations.id"), nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    annotation = relationship("Annotation", back_populates="replies")
+    author = relationship("User")

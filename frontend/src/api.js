@@ -64,6 +64,27 @@ export const documentAPI = {
     url += `&_t=${Date.now()}`
     return url
   },
+  listAnnotations: (id, page) => {
+    const params = {}
+    if (page !== undefined && page !== null) params.page = page
+    return api.get(`/documents/${id}/annotations`, { params })
+  },
+  createAnnotation: (id, data) => api.post(`/documents/${id}/annotations`, data),
+  updateAnnotation: (id, annId, data) =>
+    api.put(`/documents/${id}/annotations/${annId}`, data),
+  deleteAnnotation: (id, annId) =>
+    api.delete(`/documents/${id}/annotations/${annId}`),
+  createReply: (id, annId, data) =>
+    api.post(`/documents/${id}/annotations/${annId}/replies`, data),
+  updateReply: (id, annId, replyId, data) =>
+    api.put(`/documents/${id}/annotations/${annId}/replies/${replyId}`, data),
+  deleteReply: (id, annId, replyId) =>
+    api.delete(`/documents/${id}/annotations/${annId}/replies/${replyId}`),
+  getAnnotationsWsUrl: (id) => {
+    const token = localStorage.getItem('token') || ''
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}/api/documents/${id}/annotations/ws?token=${encodeURIComponent(token)}`
+  },
 }
 
 export default api
