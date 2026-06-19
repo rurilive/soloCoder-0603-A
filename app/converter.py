@@ -1,7 +1,7 @@
 import os
 import io
 import uuid
-import base64
+import html as html_escape
 import logging
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {
     "docx": "document",
-    "doc": "document",
     "pdf": "pdf",
     "png": "image",
     "jpg": "image",
@@ -99,10 +98,10 @@ def convert_docx_to_html(file_path: str, watermark_text: Optional[str] = None) -
         "</style></head><body>",
     ]
     if watermark_text:
-        html_parts.append(f"<div class='watermark'>{watermark_text}</div>")
+        html_parts.append(f"<div class='watermark'>{html_escape.escape(watermark_text)}</div>")
     for para in doc.paragraphs:
         style_name = para.style.name if para.style else ""
-        text = para.text or "&nbsp;"
+        text = html_escape.escape(para.text) if para.text else "&nbsp;"
         if style_name.startswith("Heading 1"):
             html_parts.append(f"<h1>{text}</h1>")
         elif style_name.startswith("Heading 2"):
@@ -117,7 +116,7 @@ def convert_docx_to_html(file_path: str, watermark_text: Optional[str] = None) -
             html_parts.append("<tr>")
             for cell in row.cells:
                 tag = "th" if i == 0 else "td"
-                html_parts.append(f"<{tag}>{cell.text}</{tag}>")
+                html_parts.append(f"<{tag}>{html_escape.escape(cell.text)}</{tag}>")
             html_parts.append("</tr>")
         html_parts.append("</table>")
     html_parts.append("</body></html>")
