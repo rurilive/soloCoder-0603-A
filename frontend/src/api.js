@@ -58,9 +58,10 @@ export const documentAPI = {
   delete: (id) => api.delete(`/documents/${id}`),
   getPreviewInfo: (id) => api.get(`/documents/${id}/preview/info`),
   getPreviewUrl: (id, page) => {
-    const token = localStorage.getItem('token')
-    let url = `/api/documents/${id}/preview`
-    if (page) url += `?page=${page}`
+    const token = localStorage.getItem('token') || ''
+    let url = `/api/documents/${id}/preview?token=${encodeURIComponent(token)}`
+    if (page) url += `&page=${page}`
+    url += `&_t=${Date.now()}`
     return url
   },
 }

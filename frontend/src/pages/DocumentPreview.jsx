@@ -61,6 +61,7 @@ export default function DocumentPreview() {
     const token = localStorage.getItem('token') || ''
     let url = `/api/documents/${id}/preview?token=${encodeURIComponent(token)}`
     if (page) url += `&page=${page}`
+    url += `&_t=${Date.now()}`
     return url
   }
 
@@ -149,7 +150,7 @@ export default function DocumentPreview() {
           <div className="preview-content">
             <iframe
               key={previewKey}
-              src={buildPreviewUrl() + '?_t=' + Date.now()}
+              src={buildPreviewUrl()}
               title={doc.original_filename}
               onError={() => setError('预览加载失败')}
             />
@@ -158,7 +159,7 @@ export default function DocumentPreview() {
           <div className="preview-content">
             <img
               key={previewKey}
-              src={buildPreviewUrl() + '&_t=' + Date.now()}
+              src={buildPreviewUrl()}
               alt={doc.original_filename}
             />
           </div>
@@ -167,7 +168,7 @@ export default function DocumentPreview() {
             <div className="preview-content">
               <img
                 key={previewKey + '-' + currentPage}
-                src={buildPreviewUrl(currentPage) + '&_t=' + Date.now()}
+                src={buildPreviewUrl(currentPage)}
                 alt={`${doc.original_filename} - 第 ${currentPage} 页`}
               />
             </div>
