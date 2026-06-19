@@ -133,6 +133,8 @@ async def recalculate_sla_deadlines(
     db: AsyncSession,
     ticket: Ticket,
     ticket_sla: TicketSLA,
+    *,
+    reset_resolution_breached: bool = True,
 ) -> bool:
     new_rule = await get_or_create_sla_rule(db, ticket.category, ticket.priority)
     if not new_rule:
@@ -148,7 +150,10 @@ async def recalculate_sla_deadlines(
 
     if ticket_sla.first_response_at is None:
         ticket_sla.response_breached = False
-    ticket_sla.resolution_breached = False
+
+    if reset_resolution_breached:
+        ticket_sla.resolution_breached = False
+
     ticket_sla.response_warning_sent = False
     ticket_sla.resolution_warning_sent = False
 
