@@ -1,8 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
 from collections import defaultdict
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import User, Ticket, TicketSLA, TicketRating, TicketStatus, UserRole
@@ -30,8 +29,6 @@ def _cache_key(prefix: str, *args) -> str:
 
 
 def _agent_display_name(user: User) -> str:
-    if user.full_name:
-        return user.full_name
     return user.username
 
 
@@ -46,7 +43,6 @@ async def get_personal_stats(db: AsyncSession, agent_id: int, period: str = "mon
     agent_result = await db.execute(select(User).where(User.id == agent_id))
     agent = agent_result.scalar_one_or_none()
     agent_name = _agent_display_name(agent) if agent else f"Agent {agent_id}"
-    avatar = agent.avatar_url if agent else None
 
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
@@ -227,8 +223,6 @@ async def get_team_overview(db: AsyncSession, period: str = "month", department:
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
     agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    if department and department != "all":
-        agent_query = agent_query.where(User.department == department)
     agent_result = await db.execute(agent_query)
     agents = agent_result.scalars().all()
     agent_ids = [a.id for a in agents]
@@ -302,8 +296,6 @@ async def get_team_trend(db: AsyncSession, period: str = "month", department: st
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
     agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    if department and department != "all":
-        agent_query = agent_query.where(User.department == department)
     agent_result = await db.execute(agent_query)
     agents = agent_result.scalars().all()
     agent_ids = [a.id for a in agents]
@@ -401,8 +393,6 @@ async def get_team_ranking(
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
     agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    if department and department != "all":
-        agent_query = agent_query.where(User.department == department)
     agent_result = await db.execute(agent_query)
     agents = agent_result.scalars().all()
     agent_map = {a.id: a for a in agents}
@@ -465,8 +455,8 @@ async def get_team_ranking(
         ranking_list.append({
             "agent_id": agent_id,
             "agent_name": _agent_display_name(agent),
-            "avatar": agent.avatar_url,
-            "department": agent.department,
+            "avatar": None,
+            "department": None,
             "ticket_count": as_["ticket_count"],
             "avg_response_time": avg_rt,
             "resolution_rate": res_rate,

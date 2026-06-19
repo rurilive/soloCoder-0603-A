@@ -1,20 +1,15 @@
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+
+from pydantic import BaseModel, Field
+
+from app.models import ActionType, SLAEventType, SLAStatus, TicketPriority, TicketStatus, UserRole
 
 
-class UserBase(BaseModel):
-    username: str
-    email: str
-    full_name: Optional[str] = None
-    avatar_url: Optional[str] = None
-    department: Optional[str] = None
-
-
-class UserCreate(UserBase):
-    password: str
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str = Field(..., max_length=120)
+    password: str = Field(..., min_length=6)
 
 
 class UserLogin(BaseModel):
@@ -22,15 +17,15 @@ class UserLogin(BaseModel):
     password: str
 
 
-class UserOut(UserBase):
+class UserOut(BaseModel):
     id: int
-    role: str
+    username: str
+    email: str
+    role: UserRole
     is_senior_agent: bool = False
-    is_active: bool
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class Token(BaseModel):
@@ -38,124 +33,166 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-class TicketBase(BaseModel):
-    title: str
-    description: str = ""
-    priority: str = "medium"
+class TicketCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(..., min_length=1)
+    priority: TicketPriority = TicketPriority.medium
     category: str = "general"
 
 
-class TicketCreate(TicketBase):
-    pass
-
-
-class TicketOut(TicketBase):
+class TicketOut(BaseModel):
     id: int
-    status: str
+    title: str
+    description: str
+    status: TicketStatus
+    priority: TicketPriority
+    category: str
     user_id: int
     agent_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     closed_at: Optional[datetime] = None
+    user: Optional[UserOut] = None
+    agent: Optional[UserOut] = None
 
-    class Config:
-        from_attributes = True
-
-
-class TicketWithSLAOut(TicketOut):
-    sla: Optional[dict] = None
+    model_config = {"from_attributes": True}
 
 
-class TicketDetailWithSLAOut(TicketWithSLAOut):
-    messages: Optional[list] = None
-    actions: Optional[list] = None
-    rating: Optional[dict] = None
+class TicketDetailOut(TicketOut):
+    messages: list["MessageOut"] = []
+    actions: list["ActionOut"] = []
+    rating: Optional["RatingOut"] = None
+
+    model_config = {"from_attributes": True}
 
 
-class MessageBase(BaseModel):
-    content: str
+class MessageCreate(BaseModel):
+    content: str = Field(..., min_length=1)
     is_internal: bool = False
 
 
-class MessageCreate(MessageBase):
-    pass
-
-
-class MessageOut(MessageBase):
+class MessageOut(BaseModel):
     id: int
     ticket_id: int
     sender_id: int
-    sender: Optional[UserOut] = None
+    content: str
+    is_internal: bool
     created_at: datetime
+    sender: Optional[UserOut] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
-class ActionBase(BaseModel):
+class ActionCreate(BaseModel):
+    action_type: ActionType
     to_user_id: Optional[int] = None
-    priority: Optional[str] = None
     reason: Optional[str] = None
+    priority: Optional[TicketPriority] = None
 
 
-class ActionCreate(ActionBase):
-    pass
-
-
-class ActionOut(ActionBase):
+class ActionOut(BaseModel):
     id: int
     ticket_id: int
-    action_type: str
+    action_type: ActionType
     from_user_id: Optional[int] = None
+    to_user_id: Optional[int] = None
+    reason: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
-class RatingBase(BaseModel):
+class RatingCreate(BaseModel):
     score: int = Field(..., ge=1, le=5)
     comment: Optional[str] = None
 
 
-class RatingCreate(RatingBase):
-    pass
-
-
-class RatingOut(RatingBase):
+class RatingOut(BaseModel):
     id: int
     ticket_id: int
     user_id: int
+    score: int
+    comment: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
-class SLARuleBase(BaseModel):
+class KnowledgeBaseOut(BaseModel):
+    id: int
+    title: str
+    content: str
     category: str
-    priority: str
-    response_time_minutes: int = 60
-    resolution_time_minutes: int = 1440
-    warning_threshold: float = 0.75
+    tags: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RecommendedKBOut(BaseModel):
+    id: int
+    title: str
+    content: str
+    category: str
+    tags: Optional[str] = None
+    score: float
+
+
+class RecommendedTicketOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    category: str
+    status: TicketStatus
+    score: float
+
+
+class RecommendationRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    category: Optional[str] = None
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class RecommendationResponse(BaseModel):
+    knowledge_articles: list[RecommendedKBOut] = []
+    similar_tickets: list[RecommendedTicketOut] = []
+
+
+class SLARuleCreate(BaseModel):
+    category: str = Field(..., max_length=50)
+    priority: TicketPriority
+    response_time_minutes: int = Field(..., ge=1)
+    resolution_time_minutes: int = Field(..., ge=1)
+    warning_threshold: float = Field(0.75, ge=0.1, le=0.99)
     auto_escalate: bool = False
 
 
-class SLARuleCreate(SLARuleBase):
-    pass
+class SLARuleUpdate(BaseModel):
+    response_time_minutes: Optional[int] = Field(None, ge=1)
+    resolution_time_minutes: Optional[int] = Field(None, ge=1)
+    warning_threshold: Optional[float] = Field(None, ge=0.1, le=0.99)
+    auto_escalate: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
-class SLARuleOut(SLARuleBase):
+class SLARuleOut(BaseModel):
     id: int
+    category: str
+    priority: TicketPriority
+    response_time_minutes: int
+    resolution_time_minutes: int
+    warning_threshold: float
+    auto_escalate: bool
     is_active: bool
     created_at: datetime
+    updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class SLAStatusOut(BaseModel):
-    sla_status: str
+    sla_status: SLAStatus
     response_deadline: Optional[datetime] = None
     resolution_deadline: Optional[datetime] = None
     response_remaining_minutes: Optional[float] = None
@@ -166,16 +203,33 @@ class SLAStatusOut(BaseModel):
     resolved_at: Optional[datetime] = None
 
 
-class TicketSLADetailOut(BaseModel):
-    id: int
-    ticket_id: int
-    rule: Optional[SLARuleOut] = None
-    sla_status: SLAStatusOut
-    first_response_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
+class TicketWithSLAOut(TicketOut):
+    sla: Optional[SLAStatusOut] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+
+
+class TicketDetailWithSLAOut(TicketDetailOut):
+    sla: Optional[SLAStatusOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+class SLAEventOut(BaseModel):
+    id: int
+    event_type: SLAEventType
+    message: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TicketSLADetailOut(SLAStatusOut):
+    id: int
+    sla_rule: Optional[SLARuleOut] = None
+    events: list[SLAEventOut] = []
+
+    model_config = {"from_attributes": True}
 
 
 class PersonalStats(BaseModel):

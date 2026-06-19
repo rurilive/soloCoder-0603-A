@@ -1,31 +1,44 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import settings
-from .routers.dashboard import router as dashboard_router
+from app.config import settings
+from app.database import engine
+from app.models import Base
+from app.routers import auth, tickets, messages, ratings, recommendations, sla
+from app.routers.dashboard import router as dashboard_router
+from app.scheduler import start_scheduler, stop_scheduler
 
-app = FastAPI(title="客服数据看板 API", version="1.0.0")
 
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
+app = FastAPI(title="Ticket System API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=False,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(dashboard_router, prefix=settings.api_prefix)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(tickets.router, prefix="/api/tickets", tags=["tickets"])
+app.include_router(messages.router, prefix="/api/tickets", tags=["messages"])
+app.include_router(ratings.router, prefix="/api/ratings", tags=["ratings"])
+app.include_router(recommendations.router, prefix="/api/recommendations", tags=["recommendations"])
+app.include_router(sla.router, prefix="/api/sla", tags=["sla"])
+app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 
 
-@app.get("/health")
-async def health_check():
+@app.get("/api/health")
+async def health():
     return {"status": "ok"}
