@@ -1,7 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
-from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import select, func, case, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import User, Ticket, TicketSLA, TicketRating, TicketStatus, UserRole
@@ -28,8 +27,45 @@ def _cache_key(prefix: str, *args) -> str:
     return f"{settings.api_prefix}:{prefix}:{':'.join(str(a) for a in args)}"
 
 
-def _agent_display_name(user: User) -> str:
-    return user.username
+def _resolved_case():
+    return case(
+        (Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]), 1),
+        else_=0,
+    )
+
+
+def _sla_ok_case():
+    return case(
+        (TicketSLA.resolution_breached == False, 1),  # noqa: E712
+        else_=0,
+    )
+
+
+def _response_time_expr():
+    return (func.julianday(TicketSLA.first_response_at) - func.julianday(Ticket.created_at)) * 86400
+
+
+def _agent_subq():
+    return select(User.id).where(User.role.in_([UserRole.agent, UserRole.admin]))
+
+
+def _fill_date_range(start_date: date, end_date: date, daily: dict) -> list[dict]:
+    data = []
+    current = start_date
+    while current <= end_date:
+        ds = current.isoformat()
+        entry = daily.get(ds, {})
+        tc = entry.get("ticket_count", 0)
+        res = entry.get("resolved", 0)
+        data.append({
+            "date": ds,
+            "ticket_count": tc,
+            "avg_response_time": entry.get("avg_response_time", 0.0),
+            "resolution_rate": round((res / tc * 100), 2) if tc > 0 else 0.0,
+            "sla_compliance_rate": entry.get("sla_compliance_rate", 0.0),
+        })
+        current += timedelta(days=1)
+    return data
 
 
 async def get_personal_stats(db: AsyncSession, agent_id: int, period: str = "month"):
@@ -39,82 +75,70 @@ async def get_personal_stats(db: AsyncSession, agent_id: int, period: str = "mon
         return cached
 
     start_date, end_date = _get_date_range(period)
+    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
+    date_filter = and_(
+        Ticket.agent_id == agent_id,
+        Ticket.created_at >= start_dt,
+        Ticket.created_at <= end_dt,
+    )
 
     agent_result = await db.execute(select(User).where(User.id == agent_id))
     agent = agent_result.scalar_one_or_none()
-    agent_name = _agent_display_name(agent) if agent else f"Agent {agent_id}"
+    agent_name = agent.username if agent else f"Agent {agent_id}"
 
-    start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
+    count_row = (await db.execute(
+        select(
+            func.count(Ticket.id).label("ticket_count"),
+            func.sum(_resolved_case()).label("resolved_count"),
+        ).where(date_filter)
+    )).one()
+    ticket_count = count_row.ticket_count or 0
+    resolved_count = count_row.resolved_count or 0
 
-    tickets_query = (
-        select(Ticket)
-        .options()
+    avg_rt_row = (await db.execute(
+        select(func.avg(_response_time_expr()).label("avg_rt"))
+        .select_from(Ticket)
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
         .where(
-            Ticket.agent_id == agent_id,
-            Ticket.created_at >= start_dt,
-            Ticket.created_at <= end_dt,
+            date_filter,
+            TicketSLA.first_response_at.isnot(None),
+            TicketSLA.first_response_at > Ticket.created_at,
         )
-    )
-    tickets_result = await db.execute(tickets_query)
-    tickets = tickets_result.scalars().all()
+    )).one_or_none()
+    avg_response_time = round(avg_rt_row.avg_rt, 2) if avg_rt_row and avg_rt_row.avg_rt else 0.0
 
-    ticket_ids = [t.id for t in tickets]
-    sla_map = {}
-    rating_map = {}
-
-    if ticket_ids:
-        sla_result = await db.execute(
-            select(TicketSLA).where(TicketSLA.ticket_id.in_(ticket_ids))
+    sla_row = (await db.execute(
+        select(
+            func.count(TicketSLA.id).label("sla_total"),
+            func.sum(_sla_ok_case()).label("sla_ok"),
         )
-        for sla in sla_result.scalars().all():
-            sla_map[sla.ticket_id] = sla
-
-        rating_result = await db.execute(
-            select(TicketRating).where(TicketRating.ticket_id.in_(ticket_ids))
+        .select_from(Ticket)
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]),
         )
-        for rating in rating_result.scalars().all():
-            rating_map[rating.ticket_id] = rating
+    )).one()
+    sla_total = sla_row.sla_total or 0
+    sla_ok = sla_row.sla_ok or 0
+    sla_compliance_rate = round((sla_ok / sla_total * 100), 2) if sla_total > 0 else 0.0
 
-    total_count = len(tickets)
-    resolved_count = 0
-    response_times = []
-    sla_ok = 0
-    sla_total_resolved = 0
-    satisfaction_scores = []
-
-    for t in tickets:
-        if t.status in (TicketStatus.resolved, TicketStatus.closed):
-            resolved_count += 1
-            sla_total_resolved += 1
-            sla = sla_map.get(t.id)
-            if sla and not sla.resolution_breached:
-                sla_ok += 1
-
-        sla = sla_map.get(t.id)
-        if sla and sla.first_response_at and t.created_at:
-            rt = (sla.first_response_at - t.created_at).total_seconds()
-            if rt > 0:
-                response_times.append(rt)
-
-        rating = rating_map.get(t.id)
-        if rating and rating.score:
-            satisfaction_scores.append(rating.score)
-
-    avg_response_time = round(sum(response_times) / len(response_times), 2) if response_times else 0.0
-    resolution_rate = round((resolved_count / total_count * 100), 2) if total_count > 0 else 0.0
-    sla_compliance_rate = round((sla_ok / sla_total_resolved * 100), 2) if sla_total_resolved > 0 else 0.0
-    avg_satisfaction = (
-        round(sum(satisfaction_scores) / len(satisfaction_scores), 2) if satisfaction_scores else None
-    )
+    sat_row = (await db.execute(
+        select(func.avg(TicketRating.score).label("avg_sat"))
+        .select_from(Ticket)
+        .join(TicketRating, TicketRating.ticket_id == Ticket.id)
+        .where(date_filter, TicketRating.score.isnot(None))
+    )).one_or_none()
+    avg_satisfaction = round(sat_row.avg_sat, 2) if sat_row and sat_row.avg_sat else None
 
     result = {
         "agent_id": agent_id,
         "agent_name": agent_name,
         "period": period,
-        "ticket_count": total_count,
+        "ticket_count": ticket_count,
         "avg_response_time": avg_response_time,
-        "resolution_rate": resolution_rate,
+        "resolution_rate": round((resolved_count / ticket_count * 100), 2) if ticket_count > 0 else 0.0,
         "sla_compliance_rate": sla_compliance_rate,
         "resolved_count": resolved_count,
         "avg_satisfaction": avg_satisfaction,
@@ -133,79 +157,61 @@ async def get_personal_trend(db: AsyncSession, agent_id: int, period: str = "mon
     start_date, end_date = _get_date_range(period)
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
-
-    tickets_query = select(Ticket).where(
+    date_filter = and_(
         Ticket.agent_id == agent_id,
         Ticket.created_at >= start_dt,
         Ticket.created_at <= end_dt,
     )
-    tickets_result = await db.execute(tickets_query)
-    tickets = tickets_result.scalars().all()
 
-    ticket_ids = [t.id for t in tickets]
-    sla_map = {}
-    if ticket_ids:
-        sla_result = await db.execute(
-            select(TicketSLA).where(TicketSLA.ticket_id.in_(ticket_ids))
+    daily: dict[str, dict] = {}
+
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.count(Ticket.id).label("ticket_count"),
+            func.sum(_resolved_case()).label("resolved"),
         )
-        for sla in sla_result.scalars().all():
-            sla_map[sla.ticket_id] = sla
+        .where(date_filter)
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        daily[r.d] = {"ticket_count": r.ticket_count or 0, "resolved": r.resolved or 0}
 
-    daily_data = defaultdict(lambda: {
-        "ticket_count": 0,
-        "response_times": [],
-        "resolved": 0,
-        "sla_ok": 0,
-        "sla_total_resolved": 0,
-    })
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.avg(_response_time_expr()).label("avg_rt"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            TicketSLA.first_response_at.isnot(None),
+            TicketSLA.first_response_at > Ticket.created_at,
+        )
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        daily.setdefault(r.d, {})["avg_response_time"] = round(r.avg_rt, 2) if r.avg_rt else 0.0
 
-    for t in tickets:
-        d = t.created_at.date()
-        dd = daily_data[d]
-        dd["ticket_count"] += 1
-
-        if t.status in (TicketStatus.resolved, TicketStatus.closed):
-            dd["resolved"] += 1
-            dd["sla_total_resolved"] += 1
-            sla = sla_map.get(t.id)
-            if sla and not sla.resolution_breached:
-                dd["sla_ok"] += 1
-
-        sla = sla_map.get(t.id)
-        if sla and sla.first_response_at and t.created_at:
-            rt = (sla.first_response_at - t.created_at).total_seconds()
-            if rt > 0:
-                dd["response_times"].append(rt)
-
-    data = []
-    current = start_date
-    while current <= end_date:
-        dd = daily_data.get(current)
-        if dd:
-            avg_rt = round(sum(dd["response_times"]) / len(dd["response_times"]), 2) if dd["response_times"] else 0.0
-            res_rate = round((dd["resolved"] / dd["ticket_count"] * 100), 2) if dd["ticket_count"] > 0 else 0.0
-            sla_rate = round((dd["sla_ok"] / dd["sla_total_resolved"] * 100), 2) if dd["sla_total_resolved"] > 0 else 0.0
-            data.append({
-                "date": current.isoformat(),
-                "ticket_count": dd["ticket_count"],
-                "avg_response_time": avg_rt,
-                "resolution_rate": res_rate,
-                "sla_compliance_rate": sla_rate,
-            })
-        else:
-            data.append({
-                "date": current.isoformat(),
-                "ticket_count": 0,
-                "avg_response_time": 0.0,
-                "resolution_rate": 0.0,
-                "sla_compliance_rate": 0.0,
-            })
-        current += timedelta(days=1)
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.count(TicketSLA.id).label("sla_total"),
+            func.sum(_sla_ok_case()).label("sla_ok"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]),
+        )
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        total = r.sla_total or 0
+        ok = r.sla_ok or 0
+        daily.setdefault(r.d, {})["sla_compliance_rate"] = round((ok / total * 100), 2) if total > 0 else 0.0
 
     result = {
         "agent_id": agent_id,
         "period": period,
-        "data": data,
+        "data": _fill_date_range(start_date, end_date, daily),
     }
 
     cache_service.set_json(cache_key, result)
@@ -222,61 +228,59 @@ async def get_team_overview(db: AsyncSession, period: str = "month", department:
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
-    agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    agent_result = await db.execute(agent_query)
-    agents = agent_result.scalars().all()
-    agent_ids = [a.id for a in agents]
-    agent_count = len(agent_ids)
+    agent_count = (await db.execute(
+        select(func.count(User.id)).where(User.role.in_([UserRole.agent, UserRole.admin]))
+    )).scalar() or 0
 
-    total_count = 0
-    resolved_count = 0
-    response_times = []
-    sla_ok = 0
-    sla_total_resolved = 0
+    date_filter = and_(
+        Ticket.agent_id.in_(_agent_subq()),
+        Ticket.created_at >= start_dt,
+        Ticket.created_at <= end_dt,
+    )
 
-    if agent_ids:
-        tickets_query = select(Ticket).where(
-            Ticket.agent_id.in_(agent_ids),
-            Ticket.created_at >= start_dt,
-            Ticket.created_at <= end_dt,
+    count_row = (await db.execute(
+        select(
+            func.count(Ticket.id).label("ticket_count"),
+            func.sum(_resolved_case()).label("resolved_count"),
+        ).where(date_filter)
+    )).one()
+    ticket_count = count_row.ticket_count or 0
+    resolved_count = count_row.resolved_count or 0
+
+    avg_rt_row = (await db.execute(
+        select(func.avg(_response_time_expr()).label("avg_rt"))
+        .select_from(Ticket)
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            TicketSLA.first_response_at.isnot(None),
+            TicketSLA.first_response_at > Ticket.created_at,
         )
-        tickets_result = await db.execute(tickets_query)
-        tickets = tickets_result.scalars().all()
+    )).one_or_none()
+    avg_response_time = round(avg_rt_row.avg_rt, 2) if avg_rt_row and avg_rt_row.avg_rt else 0.0
 
-        ticket_ids = [t.id for t in tickets]
-        sla_map = {}
-        if ticket_ids:
-            sla_result = await db.execute(
-                select(TicketSLA).where(TicketSLA.ticket_id.in_(ticket_ids))
-            )
-            for sla in sla_result.scalars().all():
-                sla_map[sla.ticket_id] = sla
-
-        total_count = len(tickets)
-        for t in tickets:
-            if t.status in (TicketStatus.resolved, TicketStatus.closed):
-                resolved_count += 1
-                sla_total_resolved += 1
-                sla = sla_map.get(t.id)
-                if sla and not sla.resolution_breached:
-                    sla_ok += 1
-
-            sla = sla_map.get(t.id)
-            if sla and sla.first_response_at and t.created_at:
-                rt = (sla.first_response_at - t.created_at).total_seconds()
-                if rt > 0:
-                    response_times.append(rt)
-
-    avg_response_time = round(sum(response_times) / len(response_times), 2) if response_times else 0.0
-    resolution_rate = round((resolved_count / total_count * 100), 2) if total_count > 0 else 0.0
-    sla_compliance_rate = round((sla_ok / sla_total_resolved * 100), 2) if sla_total_resolved > 0 else 0.0
+    sla_row = (await db.execute(
+        select(
+            func.count(TicketSLA.id).label("sla_total"),
+            func.sum(_sla_ok_case()).label("sla_ok"),
+        )
+        .select_from(Ticket)
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]),
+        )
+    )).one()
+    sla_total = sla_row.sla_total or 0
+    sla_ok = sla_row.sla_ok or 0
+    sla_compliance_rate = round((sla_ok / sla_total * 100), 2) if sla_total > 0 else 0.0
 
     result = {
         "period": period,
         "department": department,
-        "total_tickets": total_count,
+        "total_tickets": ticket_count,
         "avg_response_time": avg_response_time,
-        "resolution_rate": resolution_rate,
+        "resolution_rate": round((resolved_count / ticket_count * 100), 2) if ticket_count > 0 else 0.0,
         "sla_compliance_rate": sla_compliance_rate,
         "agent_count": agent_count,
     }
@@ -294,86 +298,61 @@ async def get_team_trend(db: AsyncSession, period: str = "month", department: st
     start_date, end_date = _get_date_range(period)
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
+    date_filter = and_(
+        Ticket.agent_id.in_(_agent_subq()),
+        Ticket.created_at >= start_dt,
+        Ticket.created_at <= end_dt,
+    )
 
-    agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    agent_result = await db.execute(agent_query)
-    agents = agent_result.scalars().all()
-    agent_ids = [a.id for a in agents]
+    daily: dict[str, dict] = {}
 
-    tickets = []
-    sla_map = {}
-    if agent_ids:
-        tickets_query = select(Ticket).where(
-            Ticket.agent_id.in_(agent_ids),
-            Ticket.created_at >= start_dt,
-            Ticket.created_at <= end_dt,
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.count(Ticket.id).label("ticket_count"),
+            func.sum(_resolved_case()).label("resolved"),
         )
-        tickets_result = await db.execute(tickets_query)
-        tickets = tickets_result.scalars().all()
+        .where(date_filter)
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        daily[r.d] = {"ticket_count": r.ticket_count or 0, "resolved": r.resolved or 0}
 
-        ticket_ids = [t.id for t in tickets]
-        if ticket_ids:
-            sla_result = await db.execute(
-                select(TicketSLA).where(TicketSLA.ticket_id.in_(ticket_ids))
-            )
-            for sla in sla_result.scalars().all():
-                sla_map[sla.ticket_id] = sla
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.avg(_response_time_expr()).label("avg_rt"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            TicketSLA.first_response_at.isnot(None),
+            TicketSLA.first_response_at > Ticket.created_at,
+        )
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        daily.setdefault(r.d, {})["avg_response_time"] = round(r.avg_rt, 2) if r.avg_rt else 0.0
 
-    daily_data = defaultdict(lambda: {
-        "ticket_count": 0,
-        "response_times": [],
-        "resolved": 0,
-        "sla_ok": 0,
-        "sla_total_resolved": 0,
-    })
-
-    for t in tickets:
-        d = t.created_at.date()
-        dd = daily_data[d]
-        dd["ticket_count"] += 1
-
-        if t.status in (TicketStatus.resolved, TicketStatus.closed):
-            dd["resolved"] += 1
-            dd["sla_total_resolved"] += 1
-            sla = sla_map.get(t.id)
-            if sla and not sla.resolution_breached:
-                dd["sla_ok"] += 1
-
-        sla = sla_map.get(t.id)
-        if sla and sla.first_response_at and t.created_at:
-            rt = (sla.first_response_at - t.created_at).total_seconds()
-            if rt > 0:
-                dd["response_times"].append(rt)
-
-    data = []
-    current = start_date
-    while current <= end_date:
-        dd = daily_data.get(current)
-        if dd:
-            avg_rt = round(sum(dd["response_times"]) / len(dd["response_times"]), 2) if dd["response_times"] else 0.0
-            res_rate = round((dd["resolved"] / dd["ticket_count"] * 100), 2) if dd["ticket_count"] > 0 else 0.0
-            sla_rate = round((dd["sla_ok"] / dd["sla_total_resolved"] * 100), 2) if dd["sla_total_resolved"] > 0 else 0.0
-            data.append({
-                "date": current.isoformat(),
-                "ticket_count": dd["ticket_count"],
-                "avg_response_time": avg_rt,
-                "resolution_rate": res_rate,
-                "sla_compliance_rate": sla_rate,
-            })
-        else:
-            data.append({
-                "date": current.isoformat(),
-                "ticket_count": 0,
-                "avg_response_time": 0.0,
-                "resolution_rate": 0.0,
-                "sla_compliance_rate": 0.0,
-            })
-        current += timedelta(days=1)
+    for r in (await db.execute(
+        select(
+            func.date(Ticket.created_at).label("d"),
+            func.count(TicketSLA.id).label("sla_total"),
+            func.sum(_sla_ok_case()).label("sla_ok"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]),
+        )
+        .group_by(func.date(Ticket.created_at))
+    )).all():
+        total = r.sla_total or 0
+        ok = r.sla_ok or 0
+        daily.setdefault(r.d, {})["sla_compliance_rate"] = round((ok / total * 100), 2) if total > 0 else 0.0
 
     result = {
         "period": period,
         "department": department,
-        "data": data,
+        "data": _fill_date_range(start_date, end_date, daily),
     }
 
     cache_service.set_json(cache_key, result)
@@ -392,75 +371,87 @@ async def get_team_ranking(
     start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=timezone.utc)
 
-    agent_query = select(User).where(User.role.in_([UserRole.agent, UserRole.admin]))
-    agent_result = await db.execute(agent_query)
-    agents = agent_result.scalars().all()
-    agent_map = {a.id: a for a in agents}
-    agent_ids = list(agent_map.keys())
+    agents = (await db.execute(
+        select(User.id, User.username).where(User.role.in_([UserRole.agent, UserRole.admin]))
+    )).all()
+    agent_map = {a.id: a.username for a in agents}
 
-    agent_stats = defaultdict(lambda: {
-        "ticket_count": 0,
-        "response_times": [],
-        "resolved": 0,
-        "sla_ok": 0,
-        "sla_total_resolved": 0,
-    })
+    if not agent_map:
+        result = {"period": period, "department": department, "ranking": []}
+        cache_service.set_json(cache_key, result)
+        return result
 
-    if agent_ids:
-        tickets_query = select(Ticket).where(
-            Ticket.agent_id.in_(agent_ids),
-            Ticket.created_at >= start_dt,
-            Ticket.created_at <= end_dt,
+    date_filter = and_(
+        Ticket.agent_id.in_(agent_map.keys()),
+        Ticket.created_at >= start_dt,
+        Ticket.created_at <= end_dt,
+    )
+
+    agent_counts: dict[int, dict] = {}
+    for r in (await db.execute(
+        select(
+            Ticket.agent_id,
+            func.count(Ticket.id).label("ticket_count"),
+            func.sum(_resolved_case()).label("resolved_count"),
         )
-        tickets_result = await db.execute(tickets_query)
-        tickets = tickets_result.scalars().all()
+        .where(date_filter)
+        .group_by(Ticket.agent_id)
+    )).all():
+        agent_counts[r.agent_id] = {
+            "ticket_count": r.ticket_count or 0,
+            "resolved_count": r.resolved_count or 0,
+        }
 
-        ticket_ids = [t.id for t in tickets]
-        sla_map = {}
-        if ticket_ids:
-            sla_result = await db.execute(
-                select(TicketSLA).where(TicketSLA.ticket_id.in_(ticket_ids))
-            )
-            for sla in sla_result.scalars().all():
-                sla_map[sla.ticket_id] = sla
+    agent_rt: dict[int, float] = {}
+    for r in (await db.execute(
+        select(
+            Ticket.agent_id,
+            func.avg(_response_time_expr()).label("avg_rt"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            TicketSLA.first_response_at.isnot(None),
+            TicketSLA.first_response_at > Ticket.created_at,
+        )
+        .group_by(Ticket.agent_id)
+    )).all():
+        agent_rt[r.agent_id] = round(r.avg_rt, 2) if r.avg_rt else 0.0
 
-        for t in tickets:
-            if not t.agent_id:
-                continue
-            as_ = agent_stats[t.agent_id]
-            as_["ticket_count"] += 1
-
-            if t.status in (TicketStatus.resolved, TicketStatus.closed):
-                as_["resolved"] += 1
-                as_["sla_total_resolved"] += 1
-                sla = sla_map.get(t.id)
-                if sla and not sla.resolution_breached:
-                    as_["sla_ok"] += 1
-
-            sla = sla_map.get(t.id)
-            if sla and sla.first_response_at and t.created_at:
-                rt = (sla.first_response_at - t.created_at).total_seconds()
-                if rt > 0:
-                    as_["response_times"].append(rt)
+    agent_sla: dict[int, float] = {}
+    for r in (await db.execute(
+        select(
+            Ticket.agent_id,
+            func.count(TicketSLA.id).label("sla_total"),
+            func.sum(_sla_ok_case()).label("sla_ok"),
+        )
+        .join(TicketSLA, Ticket.id == TicketSLA.ticket_id)
+        .where(
+            date_filter,
+            Ticket.status.in_([TicketStatus.resolved, TicketStatus.closed]),
+        )
+        .group_by(Ticket.agent_id)
+    )).all():
+        total = r.sla_total or 0
+        ok = r.sla_ok or 0
+        agent_sla[r.agent_id] = round((ok / total * 100), 2) if total > 0 else 0.0
 
     ranking_list = []
-    for agent_id, as_ in agent_stats.items():
-        agent = agent_map.get(agent_id)
-        if not agent:
+    for aid, name in agent_map.items():
+        ac = agent_counts.get(aid)
+        if not ac:
             continue
-        avg_rt = round(sum(as_["response_times"]) / len(as_["response_times"]), 2) if as_["response_times"] else 0.0
-        res_rate = round((as_["resolved"] / as_["ticket_count"] * 100), 2) if as_["ticket_count"] > 0 else 0.0
-        sla_rate = round((as_["sla_ok"] / as_["sla_total_resolved"] * 100), 2) if as_["sla_total_resolved"] > 0 else 0.0
-
+        tc = ac["ticket_count"]
+        rc = ac["resolved_count"]
         ranking_list.append({
-            "agent_id": agent_id,
-            "agent_name": _agent_display_name(agent),
+            "agent_id": aid,
+            "agent_name": name,
             "avatar": None,
             "department": None,
-            "ticket_count": as_["ticket_count"],
-            "avg_response_time": avg_rt,
-            "resolution_rate": res_rate,
-            "sla_compliance_rate": sla_rate,
+            "ticket_count": tc,
+            "avg_response_time": agent_rt.get(aid, 0.0),
+            "resolution_rate": round((rc / tc * 100), 2) if tc > 0 else 0.0,
+            "sla_compliance_rate": agent_sla.get(aid, 0.0),
         })
 
     ranking_list.sort(key=lambda x: x["ticket_count"], reverse=True)
