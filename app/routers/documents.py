@@ -225,6 +225,9 @@ async def _async_convert_runner(
 ):
     from app.database import SessionLocal
     db = SessionLocal()
+    max_retries = getattr(settings, "convert_poll_max_retries", 300)
+    max_timeout = getattr(settings, "convert_timeout_seconds", 600)
+    poll_interval = 1
     try:
         task = db.query(ConvertTask).filter(ConvertTask.id == task_id).first()
         if not task:
@@ -241,8 +244,20 @@ async def _async_convert_runner(
                 use_pdf_native=use_pdf_native,
             )
             converter_task_id = result.get("task_id")
-            while True:
-                status_data = await get_convert_task_status(converter_task_id)
+            retries = 0
+            start_time = datetime.utcnow()
+            while retries < max_retries:
+                elapsed = (datetime.utcnow() - start_time).total_seconds()
+                if elapsed > max_timeout:
+                    raise TimeoutError(f"Conversion timed out after {max_timeout} seconds")
+                try:
+                    status_data = await get_convert_task_status(converter_task_id)
+                except Exception as poll_err:
+                    retries += 1
+                    logger.warning(f"Poll converter status failed (retry {retries}/{max_retries}): {poll_err}")
+                    await asyncio.sleep(poll_interval)
+                    continue
+                retries += 1
                 task_status = status_data.get("status")
                 task_progress = status_data.get("progress", 0)
                 task.progress = task_progress
@@ -273,7 +288,9 @@ async def _async_convert_runner(
                         doc.status = DocumentStatus.FAILED
                     db.commit()
                     break
-                await asyncio.sleep(1)
+                await asyncio.sleep(poll_interval)
+            else:
+                raise TimeoutError(f"Conversion polling exceeded maximum retries ({max_retries})")
         except Exception as e:
             logger.error(f"Async conversion error for doc {doc_id}: {e}")
             task.status = ConvertTaskStatus.FAILED
@@ -340,7 +357,11 @@ def preview_document(
         raise HTTPException(status_code=404, detail="Document not found")
     if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    if doc.status != DocumentStatus.READY or not doc.preview_path or not os.path.exists(doc.preview_path):
+    if doc.status != DocumentStatus.READY:
+        raise HTTPException(status_code=400, detail="Document not ready for preview")
+    if doc.preview_type != "pdf_native" and (not doc.preview_path or not os.path.exists(doc.preview_path)):
+        raise HTTPException(status_code=400, detail="Document not ready for preview")
+    if doc.preview_type == "pdf_native" and not os.path.exists(doc.preview_path or doc.file_path or ""):
         raise HTTPException(status_code=400, detail="Document not ready for preview")
     if doc.preview_type == "html":
         return FileResponse(doc.preview_path, media_type="text/html")
@@ -354,6 +375,11 @@ def preview_document(
         if not os.path.exists(page_path):
             raise HTTPException(status_code=404, detail="Page not found")
         return FileResponse(page_path, media_type="image/png")
+    elif doc.preview_type == "pdf_native":
+        pdf_path = doc.preview_path if doc.preview_path and os.path.exists(doc.preview_path) else doc.file_path
+        if not os.path.exists(pdf_path):
+            raise HTTPException(status_code=404, detail="PDF file not found")
+        return FileResponse(pdf_path, media_type="application/pdf", filename=doc.original_name or f"document_{doc_id}.pdf")
     else:
         raise HTTPException(status_code=400, detail="Unknown preview type")
 

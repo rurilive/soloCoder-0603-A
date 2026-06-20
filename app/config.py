@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     converter_service_url: str = "http://localhost:8001"
     slow_request_threshold_seconds: float = 2.0
     pdf_native_enabled: bool = True
+    convert_timeout_seconds: int = 600
+    convert_poll_max_retries: int = 300
 
     class Config:
         env_file = ".env"
