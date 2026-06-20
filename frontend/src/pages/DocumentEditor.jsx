@@ -218,6 +218,7 @@ export default function DocumentEditor() {
   const textareaRef = useRef(null)
   const saveTimerRef = useRef(null)
   const pendingOpsRef = useRef([])
+  const savePromiseRef = useRef(null)
   const currentUser = getCurrentUser()
   const contentRef = useRef('')
   const versionRef = useRef(0)
@@ -390,16 +391,28 @@ export default function DocumentEditor() {
                 setVersion(msg.version)
                 versionRef.current = msg.version
                 pendingOpsRef.current = []
+                if (savePromiseRef.current?.type === 'auto') {
+                  const resolve = savePromiseRef.current.resolve
+                  savePromiseRef.current = null
+                  resolve && resolve({ version: msg.version, isAuto: true })
+                }
                 break
               case 'save_ack':
                 setVersion(msg.version)
                 versionRef.current = msg.version
                 pendingOpsRef.current = []
+                setDirty(false)
+                if (savePromiseRef.current) {
+                  const resolve = savePromiseRef.current.resolve
+                  savePromiseRef.current = null
+                  resolve && resolve({ version: msg.version, isAuto: msg.is_auto })
+                }
                 break
               case 'content_saved':
                 setVersion(msg.version)
                 versionRef.current = msg.version
                 pendingOpsRef.current = []
+                setDirty(false)
                 break
               case 'content_updated':
                 setContent(msg.content)
@@ -411,6 +424,14 @@ export default function DocumentEditor() {
                 break
               case 'save_conflict':
                 console.warn('保存冲突，需要手动处理:', msg)
+                if (savePromiseRef.current) {
+                  const reject = savePromiseRef.current.reject
+                  savePromiseRef.current = null
+                  reject && reject({
+                    type: 'conflict',
+                    currentVersion: msg.current_version,
+                  })
+                }
                 break
               default:
                 break
@@ -423,6 +444,11 @@ export default function DocumentEditor() {
         ws.onclose = () => {
           setWsStatus('disconnected')
           if (heartbeatTimer) clearInterval(heartbeatTimer)
+          if (savePromiseRef.current) {
+            const reject = savePromiseRef.current.reject
+            savePromiseRef.current = null
+            reject && reject(new Error('连接断开，保存失败'))
+          }
           reconnectTimer = setTimeout(connectWs, 3000)
         }
 
@@ -457,7 +483,7 @@ export default function DocumentEditor() {
       clearTimeout(saveTimerRef.current)
     }
     saveTimerRef.current = setTimeout(() => {
-      handleSave(newValue)
+      handleSave(newValue, { isAuto: true })
     }, 3000)
 
     const newLen = newValue.length
@@ -482,69 +508,90 @@ export default function DocumentEditor() {
         length: deletedLen,
       })
     }
-  }, [sendEditOperation])
+  }, [sendEditOperation, handleSave])
 
-  const handleSave = async (contentToSave) => {
+  const sendSaveMessage = useCallback(({ content, baseVersion, changeSummary, isAuto }) => {
+    return new Promise((resolve, reject) => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        reject(new Error('WebSocket 未连接'))
+        return
+      }
+      savePromiseRef.current = { resolve, reject, type: isAuto ? 'auto' : 'manual' }
+      ws.send(JSON.stringify({
+        type: 'save',
+        content,
+        base_version: baseVersion,
+        change_summary: changeSummary,
+        is_auto: isAuto,
+      }))
+    })
+  }, [])
+
+  const handleSave = useCallback(async (contentToSave, { isAuto = false, changeSummary = '' } = {}) => {
     const text = contentToSave !== undefined ? contentToSave : contentRef.current
     if (!text && text !== '') return
     setSaving(true)
     try {
-      const res = await documentAPI.updateContent(id, {
+      const result = await sendSaveMessage({
         content: text,
-        base_version: versionRef.current,
-        change_summary: 'Auto save',
+        baseVersion: versionRef.current,
+        changeSummary: changeSummary || (isAuto ? 'Auto save' : 'Manual save'),
+        isAuto,
       })
-      setVersion(res.data.version)
-      versionRef.current = res.data.version
+      setVersion(result.version)
+      versionRef.current = result.version
       pendingOpsRef.current = []
       setDirty(false)
     } catch (err) {
-      if (err.response?.status === 409) {
-        const detail = err.response.data?.detail
-        if (detail && detail.current_content !== undefined) {
-          const proceed = confirm(
-            '文档已被其他人修改，是否用您的版本覆盖？\n点击"确定"覆盖，"取消"加载最新版本。'
-          )
-          if (proceed) {
-            try {
-              const retryRes = await documentAPI.updateContent(id, {
-                content: text,
-                base_version: detail.current_version,
-                change_summary: 'Force overwrite',
-              })
-              setVersion(retryRes.data.version)
-              versionRef.current = retryRes.data.version
-              setContent(retryRes.data.content)
-              contentRef.current = retryRes.data.content
-              pendingOpsRef.current = []
-              setDirty(false)
-            } catch (retryErr) {
-              alert('保存失败: ' + (retryErr.response?.data?.detail || '未知错误'))
-            }
-          } else {
-            setContent(detail.current_content)
-            contentRef.current = detail.current_content
-            setVersion(detail.current_version)
-            versionRef.current = detail.current_version
+      if (err && err.type === 'conflict') {
+        const currentVersion = err.currentVersion
+        const proceed = confirm(
+          '文档已被其他人修改，是否用您的版本覆盖？\n点击"确定"覆盖，"取消"加载最新版本。'
+        )
+        if (proceed) {
+          try {
+            const result = await sendSaveMessage({
+              content: text,
+              baseVersion: currentVersion,
+              changeSummary: 'Force overwrite',
+              isAuto,
+            })
+            setVersion(result.version)
+            versionRef.current = result.version
             pendingOpsRef.current = []
             setDirty(false)
+          } catch (retryErr) {
+            alert('保存失败: ' + (retryErr.message || '未知错误'))
+          }
+        } else {
+          try {
+            const res = await documentAPI.getContent(id)
+            setContent(res.data.content)
+            contentRef.current = res.data.content
+            setVersion(res.data.version)
+            versionRef.current = res.data.version
+            pendingOpsRef.current = []
+            setDirty(false)
+          } catch (loadErr) {
+            alert('加载最新版本失败')
           }
         }
       } else {
-        alert(err.response?.data?.detail || '保存失败')
+        alert('保存失败: ' + (err.message || '未知错误'))
       }
     } finally {
       setSaving(false)
     }
-  }
+  }, [id, sendSaveMessage])
 
-  const handleManualSave = () => {
+  const handleManualSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    handleSave(contentRef.current)
-  }
+    handleSave(contentRef.current, { isAuto: false })
+  }, [handleSave])
 
   const handleRestoreVersion = async (versionId) => {
     const res = await documentAPI.restoreVersion(id, versionId)
@@ -580,7 +627,7 @@ export default function DocumentEditor() {
         text: '  ',
       })
     }
-  }, [sendEditOperation])
+  }, [sendEditOperation, handleManualSave])
 
   const lineCount = content.split('\n').length
 
