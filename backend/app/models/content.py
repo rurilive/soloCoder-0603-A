@@ -1,0 +1,87 @@
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, UniqueConstraint
+from sqlalchemy.orm import relationship
+
+from ..core.database import Base
+
+
+class ContentType(Base):
+    __tablename__ = "content_types"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    fields = relationship(
+        "Field",
+        back_populates="content_type",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    entries = relationship(
+        "ContentEntry",
+        back_populates="content_type",
+        cascade="all, delete-orphan",
+    )
+
+
+class Field(Base):
+    __tablename__ = "fields"
+    __table_args__ = (UniqueConstraint("content_type_id", "name", name="uq_field_content_type_name"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_type_id = Column(Integer, ForeignKey("content_types.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(100), nullable=False)
+    label = Column(String(200), nullable=False)
+    field_type = Column(String(50), nullable=False)
+    is_required = Column(Boolean, default=False)
+    is_unique = Column(Boolean, default=False)
+    is_translatable = Column(Boolean, default=True)
+    default_value = Column(JSON, nullable=True)
+    options = Column(JSON, nullable=True)
+    description = Column(String(500), nullable=True)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    content_type = relationship("ContentType", back_populates="fields")
+
+
+class ContentEntry(Base):
+    __tablename__ = "content_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content_type_id = Column(Integer, ForeignKey("content_types.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), default="draft")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
+
+    content_type = relationship("ContentType", back_populates="entries")
+    translations = relationship(
+        "EntryTranslation",
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class EntryTranslation(Base):
+    __tablename__ = "entry_translations"
+    __table_args__ = (UniqueConstraint("entry_id", "language_code", name="uq_translation_entry_language"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("content_entries.id", ondelete="CASCADE"), nullable=False)
+    language_code = Column(String(10), nullable=False, index=True)
+    field_values = Column(JSON, default={})
+    title = Column(String(500), nullable=True)
+    slug = Column(String(500), nullable=True, index=True)
+    is_published = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    entry = relationship("ContentEntry", back_populates="translations")
