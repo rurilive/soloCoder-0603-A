@@ -171,6 +171,8 @@ def convert_document_endpoint(
             doc.preview_type = "pdf_images"
         elif doc.file_type == "image":
             doc.preview_type = "image"
+        elif doc.file_type == "text":
+            doc.preview_type = "html"
         doc.status = DocumentStatus.READY
         if watermark_enabled:
             doc.watermark_enabled = True

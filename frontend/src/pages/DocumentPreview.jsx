@@ -2,6 +2,16 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { documentAPI } from '../api.js'
 
+const EDITABLE_EXTENSIONS = new Set([
+  'txt', 'md', 'csv', 'log', 'json', 'xml', 'yaml', 'yml',
+  'ini', 'cfg', 'conf', 'py', 'js', 'ts', 'html', 'css',
+])
+
+function isEditableFile(filename) {
+  const ext = filename.split('.').pop().toLowerCase()
+  return EDITABLE_EXTENSIONS.has(ext)
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -684,6 +694,14 @@ export default function DocumentPreview() {
               {doc.status !== 'ready' && (
                 <button className="btn btn-primary btn-sm" onClick={handleConvert}>
                   重新转换
+                </button>
+              )}
+              {isEditableFile(doc.original_filename) && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => navigate(`/edit/${id}`)}
+                >
+                  ✏️ 编辑
                 </button>
               )}
               <button className="btn btn-secondary btn-sm" onClick={() => navigate('/documents')}>

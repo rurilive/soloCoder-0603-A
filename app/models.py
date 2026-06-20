@@ -57,6 +57,7 @@ class Document(Base):
 
     owner = relationship("User", back_populates="documents")
     permissions = relationship("DocumentPermission", back_populates="document", cascade="all, delete-orphan")
+    content_record = relationship("DocumentContent", back_populates="document", uselist=False, cascade="all, delete-orphan")
 
 
 class PermissionLevel(str, enum.Enum):
@@ -76,6 +77,33 @@ class DocumentPermission(Base):
 
     document = relationship("Document", back_populates="permissions")
     user = relationship("User", back_populates="permissions")
+
+
+class DocumentContent(Base):
+    __tablename__ = "document_contents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), unique=True, nullable=False)
+    content = Column(Text, default="", nullable=False)
+    version = Column(Integer, default=1, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    document = relationship("Document", back_populates="content_record")
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    version = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    change_summary = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    document = relationship("Document")
+    author = relationship("User")
 
 
 class Annotation(Base):

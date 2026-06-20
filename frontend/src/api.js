@@ -85,6 +85,19 @@ export const documentAPI = {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${window.location.host}/api/documents/${id}/annotations/ws?token=${encodeURIComponent(token)}`
   },
+  getContent: (id) => api.get(`/documents/${id}/content`),
+  updateContent: (id, data) => api.put(`/documents/${id}/content`, data),
+  listVersions: (id, skip = 0, limit = 20) =>
+    api.get(`/documents/${id}/versions`, { params: { skip, limit } }),
+  getVersion: (id, versionId) => api.get(`/documents/${id}/versions/${versionId}`),
+  restoreVersion: (id, versionId) =>
+    api.post(`/documents/${id}/versions/${versionId}/restore`),
+  getOnlineEditors: (id) => api.get(`/documents/${id}/editors`),
+  getEditWsUrl: (id) => {
+    const token = localStorage.getItem('token') || ''
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}/api/documents/${id}/edit/ws?token=${encodeURIComponent(token)}`
+  },
 }
 
 export default api

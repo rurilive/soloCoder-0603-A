@@ -173,3 +173,51 @@ class AnnotationResponse(AnnotationBase):
 
     class Config:
         from_attributes = True
+
+
+class DocumentContentResponse(BaseModel):
+    document_id: int
+    content: str
+    version: int
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentContentUpdate(BaseModel):
+    content: str
+    base_version: int
+    change_summary: Optional[str] = None
+
+
+class DocumentVersionResponse(BaseModel):
+    id: int
+    document_id: int
+    version: int
+    content: str
+    author: UserBrief
+    change_summary: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentVersionBrief(BaseModel):
+    id: int
+    version: int
+    author: UserBrief
+    change_summary: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EditOperation(BaseModel):
+    type: str
+    position: int
+    text: Optional[str] = None
+    length: Optional[int] = None
+    base_version: int

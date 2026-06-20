@@ -5,6 +5,7 @@ import Register from './pages/Register.jsx'
 import DocumentList from './pages/DocumentList.jsx'
 import DocumentUpload from './pages/DocumentUpload.jsx'
 import DocumentPreview from './pages/DocumentPreview.jsx'
+import DocumentEditor from './pages/DocumentEditor.jsx'
 
 function Navbar() {
   const navigate = useNavigate()
@@ -73,6 +74,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <DocumentPreview />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/edit/:id"
+          element={
+            <PrivateRoute>
+              <DocumentEditor />
             </PrivateRoute>
           }
         />

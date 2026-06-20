@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, Base, engine
 from app.config import get_settings
-from app.routers import auth, users, documents, annotations
+from app.routers import auth, users, documents, annotations, collaboration
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(documents.router)
 app.include_router(annotations.router)
+app.include_router(collaboration.router)
 
 
 @app.get("/api/health")

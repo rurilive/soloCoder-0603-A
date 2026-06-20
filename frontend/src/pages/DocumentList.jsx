@@ -2,10 +2,21 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { documentAPI } from '../api.js'
 
+const EDITABLE_EXTENSIONS = new Set([
+  'txt', 'md', 'csv', 'log', 'json', 'xml', 'yaml', 'yml',
+  'ini', 'cfg', 'conf', 'py', 'js', 'ts', 'html', 'css',
+])
+
+function isEditableFile(filename) {
+  const ext = filename.split('.').pop().toLowerCase()
+  return EDITABLE_EXTENSIONS.has(ext)
+}
+
 const typeLabels = {
   document: { text: 'DOC', className: 'type-document' },
   pdf: { text: 'PDF', className: 'type-pdf' },
   image: { text: 'IMG', className: 'type-image' },
+  text: { text: 'TXT', className: 'type-text' },
 }
 
 const statusLabels = {
@@ -134,12 +145,22 @@ export default function DocumentList() {
                   <td>
                     <div className="action-buttons">
                       {doc.status === 'ready' ? (
-                        <button
-                          className="btn btn-success btn-sm"
-                          onClick={() => navigate(`/preview/${doc.id}`)}
-                        >
-                          预览
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-success btn-sm"
+                            onClick={() => navigate(`/preview/${doc.id}`)}
+                          >
+                            预览
+                          </button>
+                          {isEditableFile(doc.original_filename) && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => navigate(`/edit/${doc.id}`)}
+                            >
+                              编辑
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <button
                           className="btn btn-primary btn-sm"

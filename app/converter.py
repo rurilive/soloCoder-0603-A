@@ -24,7 +24,32 @@ ALLOWED_EXTENSIONS = {
     "gif": "image",
     "bmp": "image",
     "webp": "image",
+    "txt": "text",
+    "md": "text",
+    "csv": "text",
+    "log": "text",
+    "json": "text",
+    "xml": "text",
+    "yaml": "text",
+    "yml": "text",
+    "ini": "text",
+    "cfg": "text",
+    "conf": "text",
+    "py": "text",
+    "js": "text",
+    "ts": "text",
+    "html": "text",
+    "css": "text",
 }
+
+EDITABLE_EXTENSIONS = {
+    "txt", "md", "csv", "log", "json", "xml", "yaml", "yml",
+    "ini", "cfg", "conf", "py", "js", "ts", "html", "css",
+}
+
+
+def is_editable(filename: str) -> bool:
+    return get_extension(filename) in EDITABLE_EXTENSIONS
 
 
 def get_file_type(filename: str) -> Optional[str]:
@@ -154,6 +179,33 @@ def convert_image(file_path: str, watermark_text: Optional[str] = None) -> Tuple
     return preview_filename, preview_path
 
 
+def convert_text_to_html(file_path: str, watermark_text: Optional[str] = None) -> Tuple[str, str]:
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        raw_content = f.read()
+    html_parts = [
+        "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
+        "body { font-family: 'Courier New', Courier, monospace; max-width: 960px; margin: 40px auto; padding: 20px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; line-height: 1.6; }",
+        ".watermark {",
+        "position: fixed; top: 50%; left: 50%;",
+        "color: rgba(200, 200, 200, 0.3); font-size: 48px; font-weight: bold;",
+        "pointer-events: none; z-index: 9999; white-space: nowrap;",
+        "transform: translate(-50%, -50%) rotate(-45deg);",
+        "}",
+        "</style></head><body>",
+    ]
+    if watermark_text:
+        html_parts.append(f"<div class='watermark'>{html_escape.escape(watermark_text)}</div>")
+    html_parts.append(html_escape.escape(raw_content))
+    html_parts.append("</body></html>")
+    html_content = "\n".join(html_parts)
+    ensure_dirs()
+    preview_filename = f"{uuid.uuid4().hex}.html"
+    preview_path = os.path.join(settings.preview_dir, preview_filename)
+    with open(preview_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    return preview_filename, preview_path
+
+
 def convert_document(file_path: str, file_type: str, watermark_text: Optional[str] = None) -> Optional[Tuple[str, str]]:
     ext = get_extension(file_path)
     try:
@@ -163,6 +215,8 @@ def convert_document(file_path: str, file_type: str, watermark_text: Optional[st
             return convert_pdf_to_images(file_path, watermark_text)
         elif file_type == "image":
             return convert_image(file_path, watermark_text)
+        elif file_type == "text":
+            return convert_text_to_html(file_path, watermark_text)
     except Exception as e:
         logger.error(f"Conversion error: {e}")
         raise
