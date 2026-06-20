@@ -1,22 +1,43 @@
 import os
+import logging
 import mimetypes
+import asyncio
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User, Document, DocumentStatus, DocumentPermission, PermissionLevel
-from app.schemas import DocumentResponse, DocumentUpdate, PermissionCreate, PermissionResponse
+from app.models import (
+    User,
+    Document,
+    DocumentStatus,
+    DocumentPermission,
+    PermissionLevel,
+    ConvertTask,
+    ConvertTaskStatus,
+)
+from app.schemas import (
+    DocumentResponse,
+    DocumentUpdate,
+    PermissionCreate,
+    PermissionResponse,
+    ConvertTaskResponse,
+    PdfSearchResponse,
+    PdfSearchResult,
+)
 from app.security import get_current_active_user, has_document_permission, is_admin, get_optional_current_user
 from app.config import get_settings
 from app.converter import (
     is_allowed_file,
     get_file_type,
     save_upload_file,
-    convert_document,
     get_pdf_page_count,
 )
+from app.converter_client import submit_convert_task, get_convert_task_status, search_pdf_text
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 settings = get_settings()
@@ -28,6 +49,7 @@ async def upload_document(
     watermark_enabled: bool = Form(False),
     watermark_text: Optional[str] = Form(None),
     is_public: bool = Form(False),
+    auto_convert: bool = Form(True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -55,6 +77,8 @@ async def upload_document(
     db.add(doc)
     db.commit()
     db.refresh(doc)
+    if auto_convert:
+        _start_async_convert(doc, db, current_user)
     return doc
 
 
@@ -137,16 +161,138 @@ def delete_document(
             shutil.rmtree(doc.preview_path)
         else:
             os.remove(doc.preview_path)
+    db.query(ConvertTask).filter(ConvertTask.document_id == doc_id).delete()
     db.delete(doc)
     db.commit()
     return None
 
 
-@router.post("/{doc_id}/convert", response_model=DocumentResponse)
-def convert_document_endpoint(
+def _determine_preview_type(file_type: str, use_pdf_native: bool) -> str:
+    if file_type == "document":
+        return "html"
+    elif file_type == "pdf":
+        return "pdf_native" if use_pdf_native else "pdf_images"
+    elif file_type == "image":
+        return "image"
+    elif file_type == "text":
+        return "html"
+    return "unknown"
+
+
+def _start_async_convert(doc: Document, db: Session, current_user: User,
+                         watermark_text: Optional[str] = None,
+                         watermark_enabled: bool = False,
+                         use_pdf_native: Optional[bool] = None):
+    if doc.status == DocumentStatus.CONVERTING:
+        return
+    doc.status = DocumentStatus.CONVERTING
+    db.commit()
+    final_watermark = None
+    if watermark_enabled or doc.watermark_enabled:
+        final_watermark = watermark_text or doc.watermark_text or current_user.username
+    effective_use_pdf_native = use_pdf_native if use_pdf_native is not None else (settings.pdf_native_enabled and doc.file_type == "pdf")
+    task = ConvertTask(
+        document_id=doc.id,
+        status=ConvertTaskStatus.PENDING,
+        progress=0,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    asyncio.create_task(
+        _async_convert_runner(
+            task_id=task.id,
+            doc_id=doc.id,
+            file_path=doc.file_path,
+            file_type=doc.file_type,
+            filename=doc.original_filename,
+            watermark_text=final_watermark,
+            use_pdf_native=effective_use_pdf_native,
+            watermark_enabled=watermark_enabled,
+        )
+    )
+
+
+async def _async_convert_runner(
+    task_id: int,
+    doc_id: int,
+    file_path: str,
+    file_type: str,
+    filename: str,
+    watermark_text: Optional[str],
+    use_pdf_native: bool,
+    watermark_enabled: bool,
+):
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        task = db.query(ConvertTask).filter(ConvertTask.id == task_id).first()
+        if not task:
+            return
+        task.status = ConvertTaskStatus.RUNNING
+        task.started_at = datetime.utcnow()
+        db.commit()
+        try:
+            result = await submit_convert_task(
+                file_path=file_path,
+                file_type=file_type,
+                filename=filename,
+                watermark_text=watermark_text,
+                use_pdf_native=use_pdf_native,
+            )
+            converter_task_id = result.get("task_id")
+            while True:
+                status_data = await get_convert_task_status(converter_task_id)
+                task_status = status_data.get("status")
+                task_progress = status_data.get("progress", 0)
+                task.progress = task_progress
+                db.commit()
+                if task_status == "completed":
+                    task.status = ConvertTaskStatus.COMPLETED
+                    task.progress = 100
+                    task.preview_name = status_data.get("preview_name")
+                    task.preview_path = status_data.get("preview_path")
+                    task.preview_type = status_data.get("preview_type")
+                    task.completed_at = datetime.utcnow()
+                    doc = db.query(Document).filter(Document.id == doc_id).first()
+                    if doc:
+                        doc.preview_path = status_data.get("preview_path")
+                        doc.preview_type = status_data.get("preview_type") or _determine_preview_type(file_type, use_pdf_native)
+                        doc.status = DocumentStatus.READY
+                        if watermark_enabled:
+                            doc.watermark_enabled = True
+                            doc.watermark_text = watermark_text
+                    db.commit()
+                    break
+                elif task_status == "failed":
+                    task.status = ConvertTaskStatus.FAILED
+                    task.error_message = status_data.get("error_message", "Conversion failed")
+                    task.completed_at = datetime.utcnow()
+                    doc = db.query(Document).filter(Document.id == doc_id).first()
+                    if doc:
+                        doc.status = DocumentStatus.FAILED
+                    db.commit()
+                    break
+                await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Async conversion error for doc {doc_id}: {e}")
+            task.status = ConvertTaskStatus.FAILED
+            task.error_message = str(e)
+            task.completed_at = datetime.utcnow()
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if doc:
+                doc.status = DocumentStatus.FAILED
+            db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/{doc_id}/convert", response_model=ConvertTaskResponse)
+async def convert_document_endpoint(
     doc_id: int,
     watermark_text: Optional[str] = Form(None),
     watermark_enabled: bool = Form(False),
+    use_pdf_native: Optional[bool] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -157,33 +303,29 @@ def convert_document_endpoint(
         raise HTTPException(status_code=403, detail="Not enough permissions")
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=400, detail="Source file not found")
-    doc.status = DocumentStatus.CONVERTING
-    db.commit()
-    try:
-        final_watermark = None
-        if watermark_enabled or doc.watermark_enabled:
-            final_watermark = watermark_text or doc.watermark_text or current_user.username
-        preview_name, preview_path = convert_document(doc.file_path, doc.file_type, final_watermark)
-        doc.preview_path = preview_path
-        if doc.file_type == "document":
-            doc.preview_type = "html"
-        elif doc.file_type == "pdf":
-            doc.preview_type = "pdf_images"
-        elif doc.file_type == "image":
-            doc.preview_type = "image"
-        elif doc.file_type == "text":
-            doc.preview_type = "html"
-        doc.status = DocumentStatus.READY
-        if watermark_enabled:
-            doc.watermark_enabled = True
-            doc.watermark_text = final_watermark
-    except Exception as e:
-        doc.status = DocumentStatus.FAILED
-        db.commit()
-        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
-    db.commit()
+    _start_async_convert(doc, db, current_user, watermark_text, watermark_enabled, use_pdf_native)
     db.refresh(doc)
-    return doc
+    task = db.query(ConvertTask).filter(ConvertTask.document_id == doc_id).order_by(ConvertTask.created_at.desc()).first()
+    if task:
+        return task
+    raise HTTPException(status_code=500, detail="Failed to create convert task")
+
+
+@router.get("/{doc_id}/convert/status", response_model=ConvertTaskResponse)
+def get_convert_status(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    task = db.query(ConvertTask).filter(ConvertTask.document_id == doc_id).order_by(ConvertTask.created_at.desc()).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="No conversion task found")
+    return task
 
 
 @router.get("/{doc_id}/preview")
@@ -232,10 +374,71 @@ def preview_info(
         "preview_type": doc.preview_type,
         "status": doc.status.value,
         "total_pages": None,
+        "progress": None,
     }
     if doc.preview_type == "pdf_images" and doc.preview_path:
         info["total_pages"] = get_pdf_page_count(doc.preview_path)
+    elif doc.preview_type == "pdf_native":
+        try:
+            import fitz
+            pdf_doc = fitz.open(doc.preview_path if doc.preview_path and os.path.exists(doc.preview_path) else doc.file_path)
+            info["total_pages"] = pdf_doc.page_count
+            pdf_doc.close()
+        except Exception:
+            info["total_pages"] = 0
+    if doc.status == DocumentStatus.CONVERTING:
+        task = db.query(ConvertTask).filter(ConvertTask.document_id == doc_id).order_by(ConvertTask.created_at.desc()).first()
+        if task:
+            info["progress"] = task.progress
     return JSONResponse(content=info)
+
+
+@router.get("/{doc_id}/pdf/file")
+def get_pdf_file(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if doc.preview_type != "pdf_native":
+        raise HTTPException(status_code=400, detail="Document is not in pdf_native mode")
+    pdf_path = doc.preview_path if doc.preview_path and os.path.exists(doc.preview_path) else doc.file_path
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=400, detail="PDF file not found")
+    return FileResponse(pdf_path, media_type="application/pdf", filename=doc.original_filename)
+
+
+@router.get("/{doc_id}/pdf/search", response_model=PdfSearchResponse)
+async def search_pdf(
+    doc_id: int,
+    q: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not has_document_permission(db, current_user, doc, PermissionLevel.VIEW):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if doc.preview_type != "pdf_native":
+        raise HTTPException(status_code=400, detail="Search is only supported in pdf_native mode")
+    pdf_path = doc.preview_path if doc.preview_path and os.path.exists(doc.preview_path) else doc.file_path
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=400, detail="PDF file not found")
+    try:
+        result = await search_pdf_text(pdf_path, q)
+        return PdfSearchResponse(
+            query=q,
+            total_matches=result["total_matches"],
+            results=[PdfSearchResult(**r) for r in result["results"]],
+        )
+    except Exception as e:
+        logger.error(f"PDF search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @router.post("/{doc_id}/permissions", response_model=PermissionResponse, status_code=status.HTTP_201_CREATED)

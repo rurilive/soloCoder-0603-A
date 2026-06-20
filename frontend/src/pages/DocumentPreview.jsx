@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { documentAPI } from '../api.js'
+import PdfNativeViewer from '../components/PdfNativeViewer.jsx'
 
 const EDITABLE_EXTENSIONS = new Set([
   'txt', 'md', 'csv', 'log', 'json', 'xml', 'yaml', 'yml',
@@ -439,6 +440,28 @@ function AnnotationItem({ annotation, docId, currentUserId, onUpdate, onDelete, 
   )
 }
 
+function ConvertProgressBar({ progress, status }) {
+  const statusText = {
+    pending: '等待中...',
+    running: '转换中...',
+    completed: '转换完成',
+    failed: '转换失败',
+  }
+  return (
+    <div className="convert-progress-container">
+      <div className="convert-progress-bar">
+        <div
+          className={`convert-progress-fill ${status === 'failed' ? 'failed' : ''}`}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="convert-progress-text">
+        {statusText[status] || '处理中...'} {progress > 0 && progress < 100 ? `${progress}%` : ''}
+      </div>
+    </div>
+  )
+}
+
 export default function DocumentPreview() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -448,6 +471,10 @@ export default function DocumentPreview() {
   const [error, setError] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [previewKey, setPreviewKey] = useState(0)
+  const [convertProgress, setConvertProgress] = useState(0)
+  const [convertStatus, setConvertStatus] = useState(null)
+  const [converting, setConverting] = useState(false)
+  const pollRef = useRef(null)
 
   const [annotations, setAnnotations] = useState([])
   const [annotationsLoading, setAnnotationsLoading] = useState(false)
@@ -481,6 +508,10 @@ export default function DocumentPreview() {
       ])
       setDoc(docRes.data)
       setPreviewInfo(infoRes.data)
+      if (docRes.data.status === 'converting') {
+        setConverting(true)
+        setConvertProgress(infoRes.data.progress || 0)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || '加载文档失败')
     } finally {
@@ -492,6 +523,37 @@ export default function DocumentPreview() {
     fetchData()
     fetchAnnotations()
   }, [fetchData, fetchAnnotations])
+
+  useEffect(() => {
+    if (!converting) return
+    const poll = async () => {
+      try {
+        const infoRes = await documentAPI.getPreviewInfo(id)
+        setPreviewInfo(infoRes.data)
+        setConvertProgress(infoRes.data.progress || 0)
+        if (infoRes.data.status === 'ready') {
+          setConverting(false)
+          setConvertProgress(100)
+          setConvertStatus('completed')
+          const docRes = await documentAPI.get(id)
+          setDoc(docRes.data)
+          setPreviewKey((k) => k + 1)
+          return
+        }
+        if (infoRes.data.status === 'failed') {
+          setConverting(false)
+          setConvertStatus('failed')
+          return
+        }
+      } catch (err) {
+        console.error('轮询转换状态失败:', err)
+      }
+    }
+    pollRef.current = setInterval(poll, 2000)
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current)
+    }
+  }, [converting, id])
 
   useEffect(() => {
     if (!id || !token) return
@@ -608,14 +670,14 @@ export default function DocumentPreview() {
 
   const handleConvert = async () => {
     try {
-      setLoading(true)
-      await documentAPI.convert(id, doc.watermark_enabled, doc.watermark_text)
-      setPreviewKey((k) => k + 1)
-      await fetchData()
+      setConverting(true)
+      setConvertProgress(0)
+      setConvertStatus('running')
+      await documentAPI.convert(id, doc?.watermark_enabled, doc?.watermark_text)
     } catch (err) {
+      setConverting(false)
+      setConvertStatus('failed')
       setError(err.response?.data?.detail || '转换失败')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -691,9 +753,9 @@ export default function DocumentPreview() {
           <div className="preview-header">
             <h2>📄 {doc.original_filename}</h2>
             <div style={{ display: 'flex', gap: 12 }}>
-              {doc.status !== 'ready' && (
+              {doc.status !== 'ready' && !converting && (
                 <button className="btn btn-primary btn-sm" onClick={handleConvert}>
-                  重新转换
+                  {doc.status === 'failed' ? '重新转换' : '立即转换'}
                 </button>
               )}
               {isEditableFile(doc.original_filename) && (
@@ -737,7 +799,31 @@ export default function DocumentPreview() {
             </div>
           </div>
 
-          {doc.status !== 'ready' ? (
+          {converting && (
+            <div className="preview-content">
+              <div style={{ textAlign: 'center', padding: 40 }}>
+                <h3 style={{ color: '#5f6368', marginBottom: 16 }}>
+                  文档正在转换中...
+                </h3>
+                <ConvertProgressBar progress={convertProgress} status={convertStatus || 'running'} />
+              </div>
+            </div>
+          )}
+
+          {!converting && doc.status === 'failed' && (
+            <div className="preview-content">
+              <div style={{ textAlign: 'center', padding: 40 }}>
+                <h3 style={{ color: '#dc2626', marginBottom: 16 }}>
+                  转换失败
+                </h3>
+                <button className="btn btn-primary" onClick={handleConvert}>
+                  重新转换
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!converting && doc.status === 'uploaded' && (
             <div className="preview-content">
               <div style={{ textAlign: 'center', padding: 40 }}>
                 <h3 style={{ color: '#5f6368', marginBottom: 16 }}>
@@ -748,7 +834,9 @@ export default function DocumentPreview() {
                 </button>
               </div>
             </div>
-          ) : doc.preview_type === 'html' ? (
+          )}
+
+          {!converting && doc.status === 'ready' && doc.preview_type === 'html' && (
             <div className="preview-content">
               <iframe
                 key={previewKey}
@@ -757,7 +845,9 @@ export default function DocumentPreview() {
                 onError={() => setError('预览加载失败')}
               />
             </div>
-          ) : doc.preview_type === 'image' ? (
+          )}
+
+          {!converting && doc.status === 'ready' && doc.preview_type === 'image' && (
             <div className="preview-content">
               <img
                 key={previewKey}
@@ -765,7 +855,9 @@ export default function DocumentPreview() {
                 alt={doc.original_filename}
               />
             </div>
-          ) : doc.preview_type === 'pdf_images' ? (
+          )}
+
+          {!converting && doc.status === 'ready' && doc.preview_type === 'pdf_images' && (
             <>
               <div className="preview-content">
                 {pageAnnotations.length > 0 && (
@@ -811,7 +903,17 @@ export default function DocumentPreview() {
                 </div>
               )}
             </>
-          ) : (
+          )}
+
+          {!converting && doc.status === 'ready' && doc.preview_type === 'pdf_native' && (
+            <PdfNativeViewer
+              docId={parseInt(id)}
+              onTotalPages={(n) => setPreviewInfo((prev) => prev ? { ...prev, total_pages: n } : { total_pages: n })}
+              onCurrentPage={(p) => setCurrentPage(p)}
+            />
+          )}
+
+          {!converting && doc.status === 'ready' && !['html', 'image', 'pdf_images', 'pdf_native'].includes(doc.preview_type) && (
             <div className="preview-content">
               <div style={{ textAlign: 'center', color: '#5f6368' }}>
                 未知的预览格式

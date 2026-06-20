@@ -48,12 +48,15 @@ export const documentAPI = {
         ? (e) => onProgress(Math.round((e.loaded * 100) / e.total))
         : undefined,
     }),
-  convert: (id, watermarkEnabled, watermarkText) => {
+  convert: (id, watermarkEnabled, watermarkText, usePdfNative) => {
     const formData = new FormData()
     formData.append('watermark_enabled', watermarkEnabled)
     if (watermarkText) formData.append('watermark_text', watermarkText)
+    if (usePdfNative !== undefined && usePdfNative !== null)
+      formData.append('use_pdf_native', usePdfNative)
     return api.post(`/documents/${id}/convert`, formData)
   },
+  getConvertStatus: (id) => api.get(`/documents/${id}/convert/status`),
   update: (id, data) => api.put(`/documents/${id}`, data),
   delete: (id) => api.delete(`/documents/${id}`),
   getPreviewInfo: (id) => api.get(`/documents/${id}/preview/info`),
@@ -64,6 +67,12 @@ export const documentAPI = {
     url += `&_t=${Date.now()}`
     return url
   },
+  getPdfFileUrl: (id) => {
+    const token = localStorage.getItem('token') || ''
+    return `/api/documents/${id}/pdf/file?token=${encodeURIComponent(token)}`
+  },
+  searchPdf: (id, query) =>
+    api.get(`/documents/${id}/pdf/search`, { params: { q: query } }),
   listAnnotations: (id, page) => {
     const params = {}
     if (page !== undefined && page !== null) params.page = page

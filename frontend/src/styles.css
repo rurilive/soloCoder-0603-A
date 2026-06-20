@@ -1211,3 +1211,142 @@ body {
     position: static;
   }
 }
+
+.convert-progress-container {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.convert-progress-bar {
+  height: 8px;
+  background: #e8eaed;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.convert-progress-fill {
+  height: 100%;
+  background: #1a73e8;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.convert-progress-fill.failed {
+  background: #d93025;
+}
+
+.convert-progress-text {
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.pdf-native-viewer {
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e8eaed;
+  flex-wrap: wrap;
+}
+
+.pdf-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-page-info {
+  font-size: 13px;
+  color: #3c4043;
+  min-width: 80px;
+  text-align: center;
+}
+
+.pdf-zoom-info {
+  font-size: 13px;
+  color: #5f6368;
+  min-width: 45px;
+  text-align: center;
+}
+
+.pdf-search-group {
+  margin-left: auto;
+}
+
+.pdf-search-input {
+  padding: 4px 10px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 200px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.pdf-search-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26,115,232,0.1);
+}
+
+.pdf-search-count {
+  font-size: 12px;
+  color: #5f6368;
+  min-width: 60px;
+  text-align: center;
+}
+
+.pdf-canvas-container {
+  overflow: auto;
+  background: #525659;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  min-height: 600px;
+}
+
+.pdf-page-wrapper {
+  position: relative;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0.25;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.pdf-text-layer span {
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0% 0%;
+}
+
+.pdf-highlight-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.pdf-highlight-rect {
+  position: absolute;
+  background: rgba(255, 212, 0, 0.4);
+  border: 1px solid rgba(255, 180, 0, 0.6);
+  border-radius: 2px;
+}
+
+.pdf-highlight-rect.active {
+  background: rgba(255, 140, 0, 0.5);
+  border: 2px solid rgba(255, 100, 0, 0.8);
+}

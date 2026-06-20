@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
-from app.models import UserRole, DocumentStatus, PermissionLevel
+from app.models import UserRole, DocumentStatus, PermissionLevel, ConvertTaskStatus
 
 
 class Token(BaseModel):
@@ -221,3 +221,44 @@ class EditOperation(BaseModel):
     text: Optional[str] = None
     length: Optional[int] = None
     base_version: int
+
+
+class ConvertTaskResponse(BaseModel):
+    id: int
+    document_id: int
+    status: ConvertTaskStatus
+    progress: int
+    preview_name: Optional[str] = None
+    preview_type: Optional[str] = None
+    error_message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PdfSearchResult(BaseModel):
+    page: int
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class PdfSearchResponse(BaseModel):
+    query: str
+    total_matches: int
+    results: List[PdfSearchResult]
+
+
+class ServiceMetrics(BaseModel):
+    uptime_seconds: float
+    total_requests: int
+    total_conversions: int
+    successful_conversions: int
+    failed_conversions: int
+    avg_conversion_seconds: Optional[float] = None
+    slow_requests: int

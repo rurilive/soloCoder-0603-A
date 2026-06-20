@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     upload_dir: str = "./uploads"
     preview_dir: str = "./previews"
     max_file_size: int = 104857600
+    converter_service_url: str = "http://localhost:8001"
+    slow_request_threshold_seconds: float = 2.0
+    pdf_native_enabled: bool = True
 
     class Config:
         env_file = ".env"

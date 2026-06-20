@@ -19,6 +19,13 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class ConvertTaskStatus(str, enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -138,3 +145,21 @@ class AnnotationReply(Base):
 
     annotation = relationship("Annotation", back_populates="replies")
     author = relationship("User")
+
+
+class ConvertTask(Base):
+    __tablename__ = "convert_tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    status = Column(Enum(ConvertTaskStatus), default=ConvertTaskStatus.PENDING, nullable=False)
+    progress = Column(Integer, default=0)
+    preview_name = Column(String(500))
+    preview_path = Column(String(500))
+    preview_type = Column(String(20))
+    error_message = Column(Text)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    document = relationship("Document")
