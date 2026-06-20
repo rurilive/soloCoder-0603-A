@@ -225,8 +225,8 @@ async def _async_convert_runner(
 ):
     from app.database import SessionLocal
     db = SessionLocal()
-    max_retries = getattr(settings, "convert_poll_max_retries", 300)
-    max_timeout = getattr(settings, "convert_timeout_seconds", 600)
+    max_retries = settings.convert_poll_max_retries
+    max_timeout = settings.convert_timeout_seconds
     poll_interval = 1
     try:
         task = db.query(ConvertTask).filter(ConvertTask.id == task_id).first()
@@ -379,7 +379,7 @@ def preview_document(
         pdf_path = doc.preview_path if doc.preview_path and os.path.exists(doc.preview_path) else doc.file_path
         if not os.path.exists(pdf_path):
             raise HTTPException(status_code=404, detail="PDF file not found")
-        return FileResponse(pdf_path, media_type="application/pdf", filename=doc.original_name or f"document_{doc_id}.pdf")
+        return FileResponse(pdf_path, media_type="application/pdf", filename=doc.original_filename or f"document_{doc_id}.pdf")
     else:
         raise HTTPException(status_code=400, detail="Unknown preview type")
 
