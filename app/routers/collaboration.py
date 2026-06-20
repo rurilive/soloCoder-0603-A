@@ -474,6 +474,7 @@ async def edit_websocket_endpoint(
                     full_content = msg.get("content")
                     base_version = msg.get("base_version")
                     change_summary = msg.get("change_summary")
+                    is_auto = bool(msg.get("is_auto", False))
 
                     save_db = SessionLocal()
                     try:
@@ -490,15 +491,16 @@ async def edit_websocket_endpoint(
                                 with open(doc_row.file_path, "w", encoding="utf-8") as f:
                                     f.write(dc.content)
 
-                            ver = DocumentVersion(
-                                document_id=doc_id,
-                                version=dc.version,
-                                content=dc.content,
-                                author_id=user_id,
-                                change_summary=change_summary,
-                            )
-                            save_db.add(ver)
-                            save_db.commit()
+                            if not is_auto:
+                                ver = DocumentVersion(
+                                    document_id=doc_id,
+                                    version=dc.version,
+                                    content=dc.content,
+                                    author_id=user_id,
+                                    change_summary=change_summary,
+                                )
+                                save_db.add(ver)
+                                save_db.commit()
 
                             async with save_lock:
                                 dirty_content = None
@@ -507,13 +509,20 @@ async def edit_websocket_endpoint(
                             await websocket.send_text(json.dumps({
                                 "type": "save_ack",
                                 "version": dc.version,
+                                "is_auto": is_auto,
                             }))
 
-                            await edit_manager.broadcast(doc_id, {
-                                "type": "content_saved",
-                                "version": dc.version,
-                                "saved_by": {"id": user_id, "username": username},
-                            }, exclude_user_id=user_id)
+                            if is_auto:
+                                await edit_manager.broadcast(doc_id, {
+                                    "type": "auto_saved",
+                                    "version": dc.version,
+                                }, exclude_user_id=user_id)
+                            else:
+                                await edit_manager.broadcast(doc_id, {
+                                    "type": "content_saved",
+                                    "version": dc.version,
+                                    "saved_by": {"id": user_id, "username": username},
+                                }, exclude_user_id=user_id)
                         else:
                             await websocket.send_text(json.dumps({
                                 "type": "save_conflict",
