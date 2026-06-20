@@ -25,6 +25,50 @@ function isEditableFile(filename) {
   return EDITABLE_EXTENSIONS.has(ext)
 }
 
+function transformRemoteOpAgainstPending(remoteOp, pendingOps) {
+  let offset = 0
+  for (const pending of pendingOps) {
+    if (pending.type === 'insert') {
+      if (pending.position <= remoteOp.position) {
+        offset += pending.text ? pending.text.length : 0
+      }
+    } else if (pending.type === 'delete') {
+      const pendLen = pending.length || 0
+      if (pending.position + pendLen <= remoteOp.position) {
+        offset -= pendLen
+      } else if (pending.position < remoteOp.position) {
+        const overlap = Math.min(pendLen, remoteOp.position - pending.position)
+        offset -= overlap
+      }
+    }
+  }
+  const transformed = { ...remoteOp, position: remoteOp.position + offset }
+  return transformed
+}
+
+function transformPendingAgainstRemote(pendingOps, remoteOp) {
+  const result = []
+  for (const pending of pendingOps) {
+    const transformed = { ...pending }
+    if (remoteOp.type === 'insert') {
+      const insLen = remoteOp.text ? remoteOp.text.length : 0
+      if (remoteOp.position <= pending.position) {
+        transformed.position = pending.position + insLen
+      }
+    } else if (remoteOp.type === 'delete') {
+      const delLen = remoteOp.length || 0
+      if (remoteOp.position + delLen <= pending.position) {
+        transformed.position = pending.position - delLen
+      } else if (remoteOp.position < pending.position) {
+        const overlap = Math.min(delLen, pending.position - remoteOp.position)
+        transformed.position = pending.position - overlap
+      }
+    }
+    result.push(transformed)
+  }
+  return result
+}
+
 function VersionPanel({ docId, onRestore, currentVersion }) {
   const [versions, setVersions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -92,6 +136,9 @@ function VersionPanel({ docId, onRestore, currentVersion }) {
       ) : versions.length === 0 ? (
         <div className="empty-state" style={{ padding: 20 }}>
           <p>暂无版本记录</p>
+          <p style={{ fontSize: 12, marginTop: 8, color: '#888' }}>
+            提示：仅「手动保存」才会创建版本
+          </p>
         </div>
       ) : (
         <div className="version-list">
@@ -170,7 +217,18 @@ export default function DocumentEditor() {
   const wsRef = useRef(null)
   const textareaRef = useRef(null)
   const saveTimerRef = useRef(null)
+  const pendingOpsRef = useRef([])
   const currentUser = getCurrentUser()
+  const contentRef = useRef('')
+  const versionRef = useRef(0)
+
+  useEffect(() => {
+    contentRef.current = content
+  }, [content])
+
+  useEffect(() => {
+    versionRef.current = version
+  }, [version])
 
   const fetchData = useCallback(async () => {
     try {
@@ -187,10 +245,14 @@ export default function DocumentEditor() {
         const contentRes = await documentAPI.getContent(id)
         setContent(contentRes.data.content)
         setVersion(contentRes.data.version)
+        contentRef.current = contentRes.data.content
+        versionRef.current = contentRes.data.version
       } catch (err) {
         if (err.response?.status === 404) {
           setContent('')
           setVersion(0)
+          contentRef.current = ''
+          versionRef.current = 0
         } else {
           throw err
         }
@@ -205,6 +267,77 @@ export default function DocumentEditor() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const applyRemoteOperation = useCallback((rawOp) => {
+    if (!rawOp) return
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    const pending = pendingOpsRef.current
+    const op = transformRemoteOpAgainstPending(rawOp, pending)
+    pendingOpsRef.current = transformPendingAgainstRemote(pending, rawOp)
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const curContent = contentRef.current
+    let newContent = curContent
+
+    if (op.type === 'insert' && op.text != null) {
+      const pos = Math.min(Math.max(0, op.position), newContent.length)
+      newContent = newContent.slice(0, pos) + op.text + newContent.slice(pos)
+      let newStart = start
+      let newEnd = end
+      if (pos <= start) {
+        newStart += op.text.length
+        newEnd += op.text.length
+      } else if (pos <= end) {
+        newEnd += op.text.length
+      }
+      setContent(newContent)
+      contentRef.current = newContent
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.setSelectionRange(newStart, newEnd)
+        }
+      })
+    } else if (op.type === 'delete' && op.length != null) {
+      const pos = Math.min(Math.max(0, op.position), newContent.length)
+      const delLen = Math.min(op.length, newContent.length - pos)
+      newContent = newContent.slice(0, pos) + newContent.slice(pos + delLen)
+      let newStart = start
+      let newEnd = end
+      if (pos <= start) {
+        newStart = Math.max(pos, start - delLen)
+        newEnd = Math.max(pos, end - delLen)
+      } else if (pos < end) {
+        newEnd = Math.max(pos, end - delLen)
+      }
+      setContent(newContent)
+      contentRef.current = newContent
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.setSelectionRange(newStart, newEnd)
+        }
+      })
+    } else if (op.type === 'replace' && op.text != null) {
+      newContent = op.text
+      setContent(newContent)
+      contentRef.current = newContent
+      pendingOpsRef.current = []
+    }
+  }, [])
+
+  const sendEditOperation = useCallback((operation) => {
+    pendingOpsRef.current.push({ ...operation })
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'edit',
+        operation,
+        full_content: contentRef.current,
+        base_version: versionRef.current,
+      }))
+    }
+  }, [])
 
   useEffect(() => {
     if (!id || !currentUser) return
@@ -253,13 +386,31 @@ export default function DocumentEditor() {
                   }
                 }
                 break
+              case 'auto_saved':
+                setVersion(msg.version)
+                versionRef.current = msg.version
+                pendingOpsRef.current = []
+                break
+              case 'save_ack':
+                setVersion(msg.version)
+                versionRef.current = msg.version
+                pendingOpsRef.current = []
+                break
               case 'content_saved':
                 setVersion(msg.version)
+                versionRef.current = msg.version
+                pendingOpsRef.current = []
                 break
               case 'content_updated':
                 setContent(msg.content)
+                contentRef.current = msg.content
                 setVersion(msg.version)
+                versionRef.current = msg.version
                 setDirty(false)
+                pendingOpsRef.current = []
+                break
+              case 'save_conflict':
+                console.warn('保存冲突，需要手动处理:', msg)
                 break
               default:
                 break
@@ -293,69 +444,13 @@ export default function DocumentEditor() {
         try { wsRef.current.close() } catch {}
       }
     }
-  }, [id, currentUser])
+  }, [id, currentUser, applyRemoteOperation])
 
-  const applyRemoteOperation = (op) => {
-    if (!op) return
-    const textarea = textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    let newContent = content
-
-    if (op.type === 'insert' && op.text != null) {
-      const pos = Math.min(op.position, newContent.length)
-      newContent = newContent.slice(0, pos) + op.text + newContent.slice(pos)
-      let newStart = start
-      let newEnd = end
-      if (pos <= start) {
-        newStart += op.text.length
-        newEnd += op.text.length
-      } else if (pos <= end) {
-        newEnd += op.text.length
-      }
-      setContent(newContent)
-      requestAnimationFrame(() => {
-        textarea.setSelectionRange(newStart, newEnd)
-      })
-    } else if (op.type === 'delete' && op.length != null) {
-      const pos = Math.min(op.position, newContent.length)
-      const delLen = Math.min(op.length, newContent.length - pos)
-      newContent = newContent.slice(0, pos) + newContent.slice(pos + delLen)
-      let newStart = start
-      let newEnd = end
-      if (pos <= start) {
-        newStart = Math.max(pos, start - delLen)
-        newEnd = Math.max(pos, end - delLen)
-      } else if (pos < end) {
-        newEnd = Math.max(pos, end - delLen)
-      }
-      setContent(newContent)
-      requestAnimationFrame(() => {
-        textarea.setSelectionRange(newStart, newEnd)
-      })
-    } else if (op.type === 'replace' && op.text != null) {
-      newContent = op.text
-      setContent(newContent)
-    }
-  }
-
-  const sendEditOperation = (operation) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'edit',
-        operation,
-        full_content: content,
-        base_version: version,
-      }))
-    }
-  }
-
-  const handleChange = (e) => {
+  const handleChange = useCallback((e) => {
     const newValue = e.target.value
-    const oldValue = content
+    const oldValue = contentRef.current
     setContent(newValue)
+    contentRef.current = newValue
     setDirty(true)
 
     if (saveTimerRef.current) {
@@ -387,19 +482,21 @@ export default function DocumentEditor() {
         length: deletedLen,
       })
     }
-  }
+  }, [sendEditOperation])
 
   const handleSave = async (contentToSave) => {
-    const text = contentToSave !== undefined ? contentToSave : content
+    const text = contentToSave !== undefined ? contentToSave : contentRef.current
     if (!text && text !== '') return
     setSaving(true)
     try {
       const res = await documentAPI.updateContent(id, {
         content: text,
-        base_version: version,
+        base_version: versionRef.current,
         change_summary: 'Auto save',
       })
       setVersion(res.data.version)
+      versionRef.current = res.data.version
+      pendingOpsRef.current = []
       setDirty(false)
     } catch (err) {
       if (err.response?.status === 409) {
@@ -416,14 +513,20 @@ export default function DocumentEditor() {
                 change_summary: 'Force overwrite',
               })
               setVersion(retryRes.data.version)
+              versionRef.current = retryRes.data.version
               setContent(retryRes.data.content)
+              contentRef.current = retryRes.data.content
+              pendingOpsRef.current = []
               setDirty(false)
             } catch (retryErr) {
               alert('保存失败: ' + (retryErr.response?.data?.detail || '未知错误'))
             }
           } else {
             setContent(detail.current_content)
+            contentRef.current = detail.current_content
             setVersion(detail.current_version)
+            versionRef.current = detail.current_version
+            pendingOpsRef.current = []
             setDirty(false)
           }
         }
@@ -440,17 +543,20 @@ export default function DocumentEditor() {
       clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    handleSave(content)
+    handleSave(contentRef.current)
   }
 
   const handleRestoreVersion = async (versionId) => {
     const res = await documentAPI.restoreVersion(id, versionId)
     setContent(res.data.content)
+    contentRef.current = res.data.content
     setVersion(res.data.version)
+    versionRef.current = res.data.version
     setDirty(false)
+    pendingOpsRef.current = []
   }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = useCallback((e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault()
       handleManualSave()
@@ -460,8 +566,10 @@ export default function DocumentEditor() {
       const textarea = e.target
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
-      const newContent = content.slice(0, start) + '  ' + content.slice(end)
+      const curContent = contentRef.current
+      const newContent = curContent.slice(0, start) + '  ' + curContent.slice(end)
       setContent(newContent)
+      contentRef.current = newContent
       setDirty(true)
       requestAnimationFrame(() => {
         textarea.setSelectionRange(start + 2, start + 2)
@@ -472,7 +580,7 @@ export default function DocumentEditor() {
         text: '  ',
       })
     }
-  }
+  }, [sendEditOperation])
 
   const lineCount = content.split('\n').length
 
@@ -521,6 +629,7 @@ export default function DocumentEditor() {
             className={`btn btn-primary btn-sm ${saving ? 'saving' : ''}`}
             onClick={handleManualSave}
             disabled={saving}
+            title="手动保存（创建版本记录）"
           >
             {saving ? '保存中...' : '保存 (Ctrl+S)'}
           </button>
@@ -552,6 +661,9 @@ export default function DocumentEditor() {
               </div>
             </div>
           )}
+        </div>
+        <div style={{ fontSize: 11, color: '#666' }}>
+          ⚙️ 自动保存（每3秒）只更新内容，手动保存才创建版本
         </div>
       </div>
 

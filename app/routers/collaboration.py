@@ -421,8 +421,16 @@ async def edit_websocket_endpoint(
                         dc.content = dirty_content
                         dc.version += 1
                         save_db.commit()
+                        doc_row = save_db.query(Document).filter(Document.id == doc_id).first()
+                        if doc_row:
+                            with open(doc_row.file_path, "w", encoding="utf-8") as f:
+                                f.write(dc.content)
                         dirty_content = None
                         dirty_version = None
+                        await edit_manager.broadcast(doc_id, {
+                            "type": "auto_saved",
+                            "version": dc.version,
+                        }, exclude_user_id=user_id)
                 except Exception:
                     save_db.rollback()
                 finally:
