@@ -16,6 +16,13 @@ export function AppProvider({ children }) {
   useEffect(() => {
     loadLanguages()
     restoreUser()
+    const handleAuthLogout = () => {
+      logout()
+    }
+    window.addEventListener('auth:logout', handleAuthLogout)
+    return () => {
+      window.removeEventListener('auth:logout', handleAuthLogout)
+    }
   }, [])
 
   const restoreUser = () => {

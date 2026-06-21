@@ -31,6 +31,7 @@ api.interceptors.response.use(
         localStorage.removeItem('cms_access_token')
         localStorage.removeItem('cms_current_user')
         localStorage.removeItem('cms_user_roles')
+        window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'unauthorized' } }))
       } catch {}
     }
     console.error('API Error:', error.response?.data || error.message)
