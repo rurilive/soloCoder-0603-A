@@ -8,6 +8,10 @@ import ContentTypeForm from './pages/ContentTypeForm.jsx'
 import FieldsManager from './pages/FieldsManager.jsx'
 import Entries from './pages/Entries.jsx'
 import EntryEdit from './pages/EntryEdit.jsx'
+import TranslationTasks from './pages/TranslationTasks.jsx'
+import TranslationTaskDetail from './pages/TranslationTaskDetail.jsx'
+import ReviewWorkbench from './pages/ReviewWorkbench.jsx'
+import Users from './pages/Users.jsx'
 
 export default function App() {
   return (
@@ -22,6 +26,10 @@ export default function App() {
           <Route path="entries/:contentTypeSlug" element={<Entries />} />
           <Route path="entries/:contentTypeSlug/new" element={<EntryEdit />} />
           <Route path="entries/:contentTypeSlug/:entryId/edit" element={<EntryEdit />} />
+          <Route path="translation" element={<TranslationTasks />} />
+          <Route path="translation/review" element={<ReviewWorkbench />} />
+          <Route path="translation/:id" element={<TranslationTaskDetail />} />
+          <Route path="users" element={<Users />} />
         </Route>
       </Routes>
       <Toast />

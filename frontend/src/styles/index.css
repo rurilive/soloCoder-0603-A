@@ -464,3 +464,383 @@ body {
   color: #6b7280;
   margin-top: 4px;
 }
+
+.role-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.role-admin { background-color: #fce7f3; color: #9d174d; }
+.role-editor { background-color: #dbeafe; color: #1e40af; }
+.role-translator { background-color: #d1fae5; color: #065f46; }
+.role-reviewer { background-color: #fef3c7; color: #92400e; }
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.status-pending { background-color: #f3f4f6; color: #374151; }
+.status-assigned { background-color: #e0e7ff; color: #3730a3; }
+.status-in_progress { background-color: #dbeafe; color: #1e40af; }
+.status-completed { background-color: #d1fae5; color: #065f46; }
+.status-reviewing { background-color: #fef3c7; color: #92400e; }
+.status-approved { background-color: #10b981; color: #fff; }
+.status-rejected { background-color: #fee2e2; color: #991b1b; }
+
+.priority-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.priority-low { background-color: #f3f4f6; color: #374151; }
+.priority-medium { background-color: #dbeafe; color: #1e40af; }
+.priority-high { background-color: #fee2e2; color: #991b1b; }
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.progress-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.timeline {
+  border-left: 2px solid #e5e7eb;
+  padding-left: 20px;
+  margin-left: 8px;
+}
+.timeline-item {
+  position: relative;
+  padding-bottom: 16px;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -26px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
+.timeline-time {
+  font-size: 12px;
+  color: #6b7280;
+}
+.timeline-user {
+  font-weight: 600;
+  color: #1f2937;
+}
+.timeline-action {
+  color: #374151;
+  margin-top: 2px;
+}
+
+.filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  align-items: flex-end;
+}
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 20px;
+}
+.tab {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+.tab:hover {
+  color: #3b82f6;
+}
+.tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.table-container {
+  overflow-x: auto;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stats-card {
+  background: white;
+  border-radius: 10px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border-left: 4px solid #3b82f6;
+}
+.stats-card-label {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+.stats-card-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.stats-card-pending { border-left-color: #6b7280; }
+.stats-card-assigned { border-left-color: #8b5cf6; }
+.stats-card-in_progress { border-left-color: #3b82f6; }
+.stats-card-completed { border-left-color: #10b981; }
+.stats-card-reviewing { border-left-color: #f59e0b; }
+.stats-card-approved { border-left-color: #059669; }
+.stats-card-rejected { border-left-color: #ef4444; }
+
+.translation-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.compare-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.compare-header {
+  padding: 10px 16px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-weight: 600;
+  font-size: 14px;
+}
+.compare-body {
+  padding: 16px;
+}
+.compare-field {
+  margin-bottom: 16px;
+}
+.compare-field:last-child {
+  margin-bottom: 0;
+}
+.compare-field-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+.compare-field-value {
+  color: #1f2937;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.comment-item {
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.comment-user {
+  font-weight: 600;
+  font-size: 14px;
+}
+.comment-time {
+  font-size: 12px;
+  color: #6b7280;
+}
+.comment-content {
+  color: #374151;
+  line-height: 1.5;
+}
+
+.review-item {
+  padding: 12px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.review-approved { border-left: 4px solid #10b981; }
+.review-rejected { border-left: 4px solid #ef4444; }
+.review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.review-content {
+  color: #374151;
+  line-height: 1.5;
+}
+
+.user-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  justify-content: flex-end;
+}
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.user-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1f2937;
+}
+.user-email {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.login-quick-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.login-quick-btn {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+.login-quick-btn:hover {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
+.login-quick-role {
+  font-weight: 600;
+  color: #374151;
+  display: block;
+}
+.login-quick-user {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.checkbox-chip {
+  padding: 4px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+  background: white;
+}
+.checkbox-chip:hover {
+  border-color: #3b82f6;
+}
+.checkbox-chip.checked {
+  background-color: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.btn-warning {
+  background-color: #f59e0b;
+  color: white;
+}
+.btn-warning:hover {
+  background-color: #d97706;
+}
+
+.btn-info {
+  background-color: #8b5cf6;
+  color: white;
+}
+.btn-info:hover {
+  background-color: #7c3aed;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px 16px;
+}
+.info-label {
+  color: #6b7280;
+  font-size: 13px;
+}
+.info-value {
+  color: #1f2937;
+  font-size: 14px;
+}

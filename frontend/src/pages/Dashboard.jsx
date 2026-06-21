@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { contentTypesApi, entriesApi } from '../services/api.js'
+import { contentTypesApi, entriesApi, translationApi, TASK_STATUS } from '../services/api.js'
+import { useApp } from '../context/AppContext.jsx'
 
 export default function Dashboard() {
+  const { hasPermission } = useApp()
   const [stats, setStats] = useState({ contentTypes: 0, entries: 0, published: 0, languages: 0 })
+  const [translationStats, setTranslationStats] = useState(null)
   const [contentTypes, setContentTypes] = useState([])
 
   useEffect(() => {
@@ -12,10 +15,14 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [ctRes, entriesRes] = await Promise.all([
+      const promises = [
         contentTypesApi.list(),
         entriesApi.list({ limit: 1000 }),
-      ])
+      ]
+      if (hasPermission('create_translation') || hasPermission('perform_translation') || hasPermission('review_translation')) {
+        promises.push(translationApi.getStats())
+      }
+      const [ctRes, entriesRes, transRes] = await Promise.all(promises)
       setContentTypes(ctRes.data)
       const publishedCount = entriesRes.data.filter(
         (e) => e.status === 'published' && e.translations.some((t) => t.is_published)
@@ -28,6 +35,9 @@ export default function Dashboard() {
         published: publishedCount,
         languages: langSet.size,
       })
+      if (transRes) {
+        setTranslationStats(transRes.data)
+      }
     } catch (e) {
       console.error(e)
     }
@@ -57,6 +67,34 @@ export default function Dashboard() {
             <div className="stat-label">使用中的语言</div>
           </div>
         </div>
+
+        {translationStats && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1f2937' }}>翻译任务概览</h3>
+              <Link to="/translation" className="btn btn-sm btn-primary">查看全部</Link>
+            </div>
+            <div className="stats-cards">
+              {Object.entries(TASK_STATUS).map(([key, val]) => (
+                <div key={key} className={`stats-card stats-card-${key}`}>
+                  <div className="stats-card-label">{val.label}</div>
+                  <div className="stats-card-value">{translationStats[key] || 0}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+              {hasPermission('create_translation') && (
+                <Link to="/translation" className="btn btn-primary">+ 创建翻译任务</Link>
+              )}
+              {hasPermission('perform_translation') && (
+                <Link to="/translation?mine_only=true" className="btn btn-info">我的翻译任务</Link>
+              )}
+              {hasPermission('review_translation') && (
+                <Link to="/translation/review" className="btn btn-warning">去审校工作台</Link>
+              )}
+            </div>
+          </>
+        )}
 
         <div className="card">
           <h3 className="section-title">内容类型</h3>

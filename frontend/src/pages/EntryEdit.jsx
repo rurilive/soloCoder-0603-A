@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { publicApi, entriesApi } from '../services/api.js'
+import { publicApi, entriesApi, translationApi, LANGUAGES, TASK_PRIORITY } from '../services/api.js'
 import { useApp } from '../context/AppContext.jsx'
 
 function slugify(str, languageCode) {
@@ -41,7 +41,7 @@ async function generateUniqueSlug(title, languageCode, excludeEntryId = null) {
 export default function EntryEdit() {
   const { contentTypeSlug, entryId } = useParams()
   const navigate = useNavigate()
-  const { languages, defaultLanguage, languageNames, showToast } = useApp()
+  const { languages, defaultLanguage, languageNames, showToast, hasPermission } = useApp()
   const isEdit = !!entryId
 
   const [contentType, setContentType] = useState(null)
@@ -51,6 +51,14 @@ export default function EntryEdit() {
   const [entryStatus, setEntryStatus] = useState('draft')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showTranslateModal, setShowTranslateModal] = useState(false)
+  const [translateForm, setTranslateForm] = useState({
+    source_language: defaultLanguage,
+    target_languages: [],
+    priority: 'medium',
+    description: '',
+  })
+  const [creatingTask, setCreatingTask] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -228,6 +236,39 @@ export default function EntryEdit() {
     }
   }
 
+  const openTranslateModal = () => {
+    setTranslateForm({
+      source_language: currentLang,
+      target_languages: languages.filter((l) => l !== currentLang),
+      priority: 'medium',
+      description: '',
+    })
+    setShowTranslateModal(true)
+  }
+
+  const handleCreateTranslationTask = async () => {
+    if (translateForm.target_languages.length === 0) {
+      showToast('请至少选择一个目标语言', 'error')
+      return
+    }
+    try {
+      setCreatingTask(true)
+      await translationApi.create({
+        entry_id: parseInt(entryId),
+        source_language: translateForm.source_language,
+        target_languages: translateForm.target_languages,
+        priority: translateForm.priority,
+        description: translateForm.description,
+      })
+      showToast('翻译任务创建成功')
+      setShowTranslateModal(false)
+    } catch (e) {
+      showToast('创建失败: ' + (e.response?.data?.detail || e.message), 'error')
+    } finally {
+      setCreatingTask(false)
+    }
+  }
+
   const renderFieldInput = (field) => {
     const trans = getCurrentTrans()
     const value = trans.field_values?.[field.name] ?? ''
@@ -321,6 +362,11 @@ export default function EntryEdit() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <Link to={`/entries/${contentTypeSlug}`} className="btn btn-secondary">返回列表</Link>
+          {isEdit && hasPermission('create_translation') && (
+            <button className="btn btn-primary" onClick={openTranslateModal} disabled={saving}>
+              🌐 发起翻译任务
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving}>
             {saving ? '保存中...' : '保存草稿'}
           </button>
@@ -418,6 +464,79 @@ export default function EntryEdit() {
           </div>
         </div>
       </div>
+
+      {showTranslateModal && (
+        <div className="modal-backdrop" onClick={() => setShowTranslateModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">发起翻译任务</h3>
+              <button className="modal-close" onClick={() => setShowTranslateModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">源语言</label>
+                <select
+                  className="form-select"
+                  value={translateForm.source_language}
+                  onChange={(e) => setTranslateForm({ ...translateForm, source_language: e.target.value })}
+                >
+                  {languages.map((lang) => (
+                    <option key={lang} value={lang}>{languageNames[lang] || lang}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">目标语言（可多选）</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                  {languages.filter((l) => l !== translateForm.source_language).map((lang) => (
+                    <label key={lang} className="form-check" style={{ margin: 0, padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={translateForm.target_languages.includes(lang)}
+                        onChange={(e) => {
+                          const next = new Set(translateForm.target_languages)
+                          if (e.target.checked) next.add(lang)
+                          else next.delete(lang)
+                          setTranslateForm({ ...translateForm, target_languages: Array.from(next) })
+                        }}
+                      />
+                      <span style={{ margin: 0 }}>{languageNames[lang] || lang}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">优先级</label>
+                <select
+                  className="form-select"
+                  value={translateForm.priority}
+                  onChange={(e) => setTranslateForm({ ...translateForm, priority: e.target.value })}
+                >
+                  {Object.entries(TASK_PRIORITY).map(([key, val]) => (
+                    <option key={key} value={key}>{val.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">翻译说明</label>
+                <textarea
+                  className="form-textarea"
+                  rows={4}
+                  value={translateForm.description}
+                  onChange={(e) => setTranslateForm({ ...translateForm, description: e.target.value })}
+                  placeholder="可选，为翻译人员提供上下文说明"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowTranslateModal(false)}>取消</button>
+              <button className="btn btn-primary" onClick={handleCreateTranslationTask} disabled={creatingTask}>
+                {creatingTask ? '创建中...' : '创建翻译任务'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

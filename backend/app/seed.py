@@ -3,7 +3,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
+from app.core.security import hash_password
 from app.models.content import ContentType, Field, ContentEntry, EntryTranslation
+from app.models.user import User, Role, Permission, RolePermission
 
 
 async def get_or_create_content_type(db: AsyncSession, slug: str, name: str, description: str):
@@ -81,13 +83,157 @@ async def get_or_create_entry_with_translations(
         return entry
 
 
+async def seed_users_roles(db: AsyncSession):
+    print("Roles & Permissions:")
+
+    permissions_data = [
+        {"name": "管理用户", "codename": "manage_users", "description": "创建、编辑、删除用户"},
+        {"name": "管理角色", "codename": "manage_roles", "description": "创建、编辑角色和分配权限"},
+        {"name": "管理内容类型", "codename": "manage_content_types", "description": "创建、编辑内容类型和字段"},
+        {"name": "编辑内容", "codename": "edit_content", "description": "创建、编辑、删除内容条目"},
+        {"name": "发布内容", "codename": "publish_content", "description": "发布和下架内容"},
+        {"name": "创建翻译任务", "codename": "create_translation", "description": "创建并分配翻译任务"},
+        {"name": "执行翻译", "codename": "perform_translation", "description": "执行翻译并提交完成"},
+        {"name": "审校翻译", "codename": "review_translation", "description": "审校翻译质量，通过或驳回"},
+        {"name": "查看所有任务", "codename": "view_all_tasks", "description": "查看所有翻译任务"},
+        {"name": "分配任务", "codename": "assign_tasks", "description": "分配翻译任务给翻译人员"},
+    ]
+
+    created_perms = {}
+    for pd in permissions_data:
+        result = await db.execute(select(Permission).where(Permission.codename == pd["codename"]))
+        perm = result.scalar_one_or_none()
+        if not perm:
+            perm = Permission(**pd)
+            db.add(perm)
+            await db.flush()
+            print(f"  + Created permission: {pd['codename']}")
+        created_perms[pd["codename"]] = perm
+
+    roles_data = [
+        {
+            "name": "admin",
+            "description": "系统管理员，拥有所有权限",
+            "permissions": [p["codename"] for p in permissions_data],
+        },
+        {
+            "name": "editor",
+            "description": "内容编辑，可以创建内容并发起翻译任务",
+            "permissions": ["manage_content_types", "edit_content", "publish_content", "create_translation", "view_all_tasks", "assign_tasks"],
+        },
+        {
+            "name": "translator",
+            "description": "翻译人员，执行翻译任务",
+            "permissions": ["perform_translation"],
+        },
+        {
+            "name": "reviewer",
+            "description": "审校人员，审核翻译质量",
+            "permissions": ["review_translation", "view_all_tasks"],
+        },
+    ]
+
+    created_roles = {}
+    for rd in roles_data:
+        result = await db.execute(select(Role).where(Role.name == rd["name"]))
+        role = result.scalar_one_or_none()
+        if not role:
+            role = Role(name=rd["name"], description=rd["description"])
+            db.add(role)
+            await db.flush()
+            print(f"  + Created role: {rd['name']}")
+        created_roles[rd["name"]] = role
+
+        perm_codenames = rd["permissions"]
+        for codename in perm_codenames:
+            perm = created_perms.get(codename)
+            if perm:
+                rp_result = await db.execute(
+                    select(RolePermission).where(
+                        RolePermission.role_id == role.id,
+                        RolePermission.permission_id == perm.id,
+                    )
+                )
+                if not rp_result.scalar_one_or_none():
+                    rp = RolePermission(role_id=role.id, permission_id=perm.id)
+                    db.add(rp)
+
+    await db.flush()
+
+    print("\nUsers:")
+    users_data = [
+        {
+            "username": "admin",
+            "email": "admin@cms.local",
+            "full_name": "系统管理员",
+            "password": "admin123",
+            "roles": ["admin"],
+            "avatar": "👨‍💼",
+        },
+        {
+            "username": "editor",
+            "email": "editor@cms.local",
+            "full_name": "张编辑",
+            "password": "editor123",
+            "roles": ["editor"],
+            "avatar": "✍️",
+        },
+        {
+            "username": "translator_en",
+            "email": "translator_en@cms.local",
+            "full_name": "李翻译（英文）",
+            "password": "trans123",
+            "roles": ["translator"],
+            "avatar": "🌐",
+        },
+        {
+            "username": "translator_ja",
+            "email": "translator_ja@cms.local",
+            "full_name": "王翻译（日文）",
+            "password": "trans123",
+            "roles": ["translator"],
+            "avatar": "🌸",
+        },
+        {
+            "username": "reviewer",
+            "email": "reviewer@cms.local",
+            "full_name": "陈审校",
+            "password": "review123",
+            "roles": ["reviewer"],
+            "avatar": "✅",
+        },
+    ]
+
+    for ud in users_data:
+        result = await db.execute(select(User).where(User.username == ud["username"]))
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                username=ud["username"],
+                email=ud["email"],
+                full_name=ud["full_name"],
+                hashed_password=hash_password(ud["password"]),
+                avatar=ud["avatar"],
+                is_active=True,
+                language_preference="zh",
+            )
+            user.roles = [created_roles[rname] for rname in ud["roles"]]
+            db.add(user)
+            print(f"  + Created user: {ud['username']} ({ud['full_name']}) - pwd: {ud['password']}")
+        else:
+            print(f"  User '{ud['username']}' already exists, skipping.")
+
+    await db.flush()
+
+
 async def seed_data():
     print("\n=== Seeding CMS Data ===")
     print("Checking existing data and inserting only if not present...\n")
 
     async with AsyncSessionLocal() as db:
-        # --- Content Types & Fields ---
-        print("Content Types:")
+        await seed_users_roles(db)
+
+        print("\nContent Types:")
         article_type, _ = await get_or_create_content_type(db, "article", "文章", "网站文章内容，支持多语言")
         await create_fields_if_not_exists(db, article_type.id, [
             {"name": "title", "label": "标题", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1},

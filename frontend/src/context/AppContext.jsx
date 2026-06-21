@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
-import { publicApi } from '../services/api'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { usersApi, publicApi } from '../services/api'
 
 const AppContext = createContext()
 
@@ -7,10 +7,32 @@ export function AppProvider({ children }) {
   const [languages, setLanguages] = useState([])
   const [defaultLanguage, setDefaultLanguage] = useState('zh')
   const [toast, setToast] = useState(null)
+  const [currentUser, setCurrentUser] = useState(null)
+  const [userRoles, setUserRoles] = useState([])
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
     loadLanguages()
+    restoreUser()
   }, [])
+
+  const restoreUser = () => {
+    try {
+      const saved = localStorage.getItem('cms_current_user')
+      const savedRoles = localStorage.getItem('cms_user_roles')
+      if (saved) {
+        setCurrentUser(JSON.parse(saved))
+      }
+      if (savedRoles) {
+        setUserRoles(JSON.parse(savedRoles))
+      } else {
+        setIsLoginModalOpen(true)
+      }
+    } catch (e) {
+      console.error('Restore user error:', e)
+    }
+  }
 
   const loadLanguages = async () => {
     try {
@@ -21,6 +43,45 @@ export function AppProvider({ children }) {
       setLanguages(['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es'])
     }
   }
+
+  const login = useCallback(async (username, password) => {
+    setIsLoading(true)
+    try {
+      const res = await usersApi.login(username, password)
+      const { user, roles } = res.data
+      setCurrentUser(user)
+      setUserRoles(roles)
+      localStorage.setItem('cms_current_user', JSON.stringify(user))
+      localStorage.setItem('cms_user_roles', JSON.stringify(roles))
+      setIsLoginModalOpen(false)
+      showToast(`欢迎回来，${user.full_name || user.username}！`, 'success')
+      return true
+    } catch (e) {
+      const msg = e.response?.data?.detail || '登录失败'
+      showToast(msg, 'error')
+      return false
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  const logout = useCallback(() => {
+    setCurrentUser(null)
+    setUserRoles([])
+    localStorage.removeItem('cms_current_user')
+    localStorage.removeItem('cms_user_roles')
+    setIsLoginModalOpen(true)
+    showToast('已退出登录', 'info')
+  }, [])
+
+  const hasRole = useCallback((...roles) => {
+    return roles.some(r => userRoles.includes(r))
+  }, [userRoles])
+
+  const hasPermission = useCallback((...codenames) => {
+    if (!currentUser?.permissions) return hasRole('admin')
+    return currentUser.permissions.some(p => codenames.includes(p.codename)) || hasRole('admin')
+  }, [currentUser, hasRole])
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
@@ -37,6 +98,9 @@ export function AppProvider({ children }) {
     es: 'Español',
   }
 
+  const openLogin = () => setIsLoginModalOpen(true)
+  const closeLogin = () => setIsLoginModalOpen(false)
+
   return (
     <AppContext.Provider value={{
       languages,
@@ -44,6 +108,16 @@ export function AppProvider({ children }) {
       languageNames,
       toast,
       showToast,
+      currentUser,
+      userRoles,
+      isLoginModalOpen,
+      isLoading,
+      login,
+      logout,
+      hasRole,
+      hasPermission,
+      openLogin,
+      closeLogin,
     }}>
       {children}
     </AppContext.Provider>
