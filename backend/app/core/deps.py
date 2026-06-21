@@ -5,13 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .database import get_db
+from .security import decode_access_token
 from ..models.user import User, Role, Permission, RolePermission
 
 
 async def get_current_user_id(
-    x_user_id: Optional[int] = Header(None, description="当前登录用户ID"),
+    authorization: Optional[str] = Header(None, description="Bearer JWT token"),
 ) -> Optional[int]:
-    return x_user_id
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[len("Bearer "):].strip()
+    if not token:
+        return None
+    return decode_access_token(token)
 
 
 async def get_current_user(
@@ -38,7 +44,8 @@ async def require_current_user(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登录或用户不存在",
+            detail="未登录或Token无效",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
         raise HTTPException(

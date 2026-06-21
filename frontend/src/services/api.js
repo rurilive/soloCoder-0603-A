@@ -1,9 +1,8 @@
 import axios from 'axios'
 
-const getCurrentUserId = () => {
+const getToken = () => {
   try {
-    const user = JSON.parse(localStorage.getItem('cms_current_user') || 'null')
-    return user?.id || null
+    return localStorage.getItem('cms_access_token') || null
   } catch {
     return null
   }
@@ -17,9 +16,9 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const userId = getCurrentUserId()
-  if (userId) {
-    config.headers['X-User-Id'] = userId
+  const token = getToken()
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`
   }
   return config
 })
@@ -27,6 +26,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      try {
+        localStorage.removeItem('cms_access_token')
+        localStorage.removeItem('cms_current_user')
+        localStorage.removeItem('cms_user_roles')
+      } catch {}
+    }
     console.error('API Error:', error.response?.data || error.message)
     return Promise.reject(error)
   }

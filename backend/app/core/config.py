@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./cms.db"
     SUPPORTED_LANGUAGES: List[str] = ["zh", "en", "ja", "ko", "fr", "de", "es"]
     DEFAULT_LANGUAGE: str = "zh"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = "your-secret-key-change-in-production-please-change-me-now-2024"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     CORS_ORIGINS: List[str] = ["*"]
 
     class Config:

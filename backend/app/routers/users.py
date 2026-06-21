@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from ..core.database import get_db
 from ..core.deps import require_current_user, RequireRole
-from ..core.security import hash_password, verify_password
+from ..core.security import hash_password, verify_password, create_access_token
 from ..models.user import User, Role, Permission, RolePermission
 from ..schemas.user import (
     UserCreate,
@@ -57,7 +57,11 @@ async def login(
         for rp in role.permissions:
             all_permissions.append(rp.permission)
 
+    access_token = create_access_token(user.id)
+
     return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
         user=UserWithPermissionsResponse(
             **UserResponse.model_validate(user).model_dump(),
             permissions=all_permissions,

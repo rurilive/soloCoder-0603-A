@@ -9,6 +9,7 @@ export function AppProvider({ children }) {
   const [toast, setToast] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [userRoles, setUserRoles] = useState([])
+  const [accessToken, setAccessToken] = useState(null)
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -19,14 +20,19 @@ export function AppProvider({ children }) {
 
   const restoreUser = () => {
     try {
+      const savedToken = localStorage.getItem('cms_access_token')
       const saved = localStorage.getItem('cms_current_user')
       const savedRoles = localStorage.getItem('cms_user_roles')
+      if (savedToken) {
+        setAccessToken(savedToken)
+      }
       if (saved) {
         setCurrentUser(JSON.parse(saved))
       }
       if (savedRoles) {
         setUserRoles(JSON.parse(savedRoles))
-      } else {
+      }
+      if (!savedToken || !saved) {
         setIsLoginModalOpen(true)
       }
     } catch (e) {
@@ -48,9 +54,11 @@ export function AppProvider({ children }) {
     setIsLoading(true)
     try {
       const res = await usersApi.login(username, password)
-      const { user, roles } = res.data
+      const { access_token: token, user, roles } = res.data
+      setAccessToken(token)
       setCurrentUser(user)
       setUserRoles(roles)
+      localStorage.setItem('cms_access_token', token)
       localStorage.setItem('cms_current_user', JSON.stringify(user))
       localStorage.setItem('cms_user_roles', JSON.stringify(roles))
       setIsLoginModalOpen(false)
@@ -66,8 +74,10 @@ export function AppProvider({ children }) {
   }, [])
 
   const logout = useCallback(() => {
+    setAccessToken(null)
     setCurrentUser(null)
     setUserRoles([])
+    localStorage.removeItem('cms_access_token')
     localStorage.removeItem('cms_current_user')
     localStorage.removeItem('cms_user_roles')
     setIsLoginModalOpen(true)
@@ -110,6 +120,7 @@ export function AppProvider({ children }) {
       showToast,
       currentUser,
       userRoles,
+      accessToken,
       isLoginModalOpen,
       isLoading,
       login,
