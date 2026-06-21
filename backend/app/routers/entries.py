@@ -21,6 +21,24 @@ from ..schemas.content import (
 router = APIRouter()
 
 
+@router.get("/check-slug")
+async def check_slug_availability(
+    slug: str = Query(..., description="Slug to check"),
+    exclude_entry_id: Optional[int] = Query(None, description="Exclude this entry ID from check"),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(EntryTranslation).where(EntryTranslation.slug == slug)
+    if exclude_entry_id:
+        query = query.where(EntryTranslation.entry_id != exclude_entry_id)
+    result = await db.execute(query)
+    existing = result.scalar_one_or_none()
+    return {
+        "slug": slug,
+        "available": existing is None,
+        "existing_entry_id": existing.entry_id if existing else None,
+    }
+
+
 @router.post("/", response_model=EntryWithTranslationsResponse, status_code=status.HTTP_201_CREATED)
 async def create_entry(
     data: ContentEntryCreate,

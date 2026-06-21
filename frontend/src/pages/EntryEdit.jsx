@@ -3,12 +3,39 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { publicApi, entriesApi } from '../services/api.js'
 import { useApp } from '../context/AppContext.jsx'
 
-function slugify(str) {
-  return String(str)
+function slugify(str, languageCode) {
+  let base = String(str)
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '')
+  if (languageCode) {
+    base = base + '-' + languageCode
+  }
+  return base
+}
+
+async function generateUniqueSlug(title, languageCode, excludeEntryId = null) {
+  if (!title?.trim()) return ''
+  let baseSlug = slugify(title, languageCode)
+  let candidate = baseSlug
+  let counter = 1
+  const maxAttempts = 100
+
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const res = await entriesApi.checkSlug(candidate, excludeEntryId)
+      if (res.data.available) {
+        return candidate
+      }
+      counter++
+      candidate = `${baseSlug}-${counter}`
+    } catch (e) {
+      console.warn('Slug check failed, using fallback:', candidate)
+      return candidate
+    }
+  }
+  return candidate
 }
 
 export default function EntryEdit() {
@@ -90,7 +117,7 @@ export default function EntryEdit() {
   const handleTitleChange = (e) => {
     const title = e.target.value
     updateCurrentTrans((curr) => {
-      const newSlug = curr.slug || slugify(title)
+      const newSlug = curr.slug || slugify(title, currentLang)
       return {
         ...curr,
         title,
@@ -124,12 +151,12 @@ export default function EntryEdit() {
       return
     }
 
-    const transList = Object.entries(translations)
+    let transList = Object.entries(translations)
       .filter(([, t]) => t.title?.trim() || Object.keys(t.field_values || {}).length > 0)
       .map(([lang, t]) => ({
         language_code: lang,
         title: t.title,
-        slug: t.slug || slugify(t.title + '-' + lang),
+        slug: t.slug || slugify(t.title, lang),
         is_published: publishAll ? true : t.is_published,
         field_values: t.field_values || {},
       }))
@@ -141,6 +168,18 @@ export default function EntryEdit() {
 
     try {
       setSaving(true)
+      showToast('正在检查slug唯一性...', 'info')
+
+      for (let i = 0; i < transList.length; i++) {
+        const trans = transList[i]
+        const uniqueSlug = await generateUniqueSlug(
+          trans.title,
+          trans.language_code,
+          isEdit ? parseInt(entryId) : null
+        )
+        transList[i].slug = uniqueSlug
+      }
+
       const payload = {
         content_type_id: contentType.id,
         status: publishAll ? 'published' : entryStatus,

@@ -45,6 +45,7 @@ export const entriesApi = {
   createTranslation: (entryId, data) => api.post(`/entries/${entryId}/translations`, data),
   updateTranslation: (entryId, languageCode, data) => api.put(`/entries/${entryId}/translations/${languageCode}`, data),
   deleteTranslation: (entryId, languageCode) => api.delete(`/entries/${entryId}/translations/${languageCode}`),
+  checkSlug: (slug, excludeEntryId) => api.get('/entries/check-slug', { params: { slug, exclude_entry_id: excludeEntryId } }),
 }
 
 export const publicApi = {
