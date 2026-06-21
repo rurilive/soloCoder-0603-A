@@ -72,14 +72,16 @@ class ContentEntry(Base):
 
 class EntryTranslation(Base):
     __tablename__ = "entry_translations"
-    __table_args__ = (UniqueConstraint("entry_id", "language_code", name="uq_translation_entry_language"),)
+    __table_args__ = (
+        UniqueConstraint("entry_id", "language_code", name="uq_translation_entry_language"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("content_entries.id", ondelete="CASCADE"), nullable=False)
     language_code = Column(String(10), nullable=False, index=True)
     field_values = Column(JSON, default={})
     title = Column(String(500), nullable=True)
-    slug = Column(String(500), nullable=True, index=True)
+    slug = Column(String(500), nullable=True, unique=True, index=True)
     is_published = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

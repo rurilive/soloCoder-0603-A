@@ -30,6 +30,17 @@ async def create_entry(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Content type not found")
 
+    for trans_data in data.translations:
+        if trans_data.slug:
+            slug_result = await db.execute(
+                select(EntryTranslation).where(EntryTranslation.slug == trans_data.slug)
+            )
+            if slug_result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Slug '{trans_data.slug}' is already in use",
+                )
+
     entry = ContentEntry(
         content_type_id=data.content_type_id,
         status=data.status,
@@ -265,6 +276,16 @@ async def create_entry_translation(
             detail=f"Translation for language '{data.language_code}' already exists",
         )
 
+    if data.slug:
+        slug_result = await db.execute(
+            select(EntryTranslation).where(EntryTranslation.slug == data.slug)
+        )
+        if slug_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Slug '{data.slug}' is already in use",
+            )
+
     translation = EntryTranslation(entry_id=entry_id, **data.model_dump())
     db.add(translation)
     await db.commit()
@@ -290,6 +311,17 @@ async def update_entry_translation(
         raise HTTPException(status_code=404, detail="Translation not found")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if "slug" in update_data and update_data["slug"] and update_data["slug"] != translation.slug:
+        slug_result = await db.execute(
+            select(EntryTranslation).where(EntryTranslation.slug == update_data["slug"])
+        )
+        if slug_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Slug '{update_data['slug']}' is already in use",
+            )
+
     for key, value in update_data.items():
         setattr(translation, key, value)
 
