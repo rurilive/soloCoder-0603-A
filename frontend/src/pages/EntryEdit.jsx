@@ -72,6 +72,7 @@ export default function EntryEdit() {
           transMap[t.language_code] = {
             title: t.title || '',
             slug: t.slug || '',
+            slug_edited: !!t.slug,
             is_published: t.is_published,
             field_values: { ...t.field_values },
           }
@@ -83,6 +84,7 @@ export default function EntryEdit() {
           initial[lang] = {
             title: '',
             slug: '',
+            slug_edited: false,
             is_published: false,
             field_values: {},
           }
@@ -96,12 +98,12 @@ export default function EntryEdit() {
     }
   }
 
-  const getCurrentTrans = () => translations[currentLang] || { title: '', slug: '', field_values: {}, is_published: false }
+  const getCurrentTrans = () => translations[currentLang] || { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false }
 
   const updateCurrentTrans = (updater) => {
     setTranslations((prev) => {
       const next = { ...prev }
-      const curr = next[currentLang] || { title: '', slug: '', field_values: {}, is_published: false }
+      const curr = next[currentLang] || { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false }
       next[currentLang] = typeof updater === 'function' ? updater(curr) : { ...curr, ...updater }
       return next
     })
@@ -117,7 +119,7 @@ export default function EntryEdit() {
   const handleTitleChange = (e) => {
     const title = e.target.value
     updateCurrentTrans((curr) => {
-      const newSlug = curr.slug || slugify(title, currentLang)
+      const newSlug = !curr.slug_edited && curr.slug === '' ? slugify(title, currentLang) : curr.slug
       return {
         ...curr,
         title,
@@ -128,7 +130,7 @@ export default function EntryEdit() {
   }
 
   const handleSlugChange = (e) => {
-    updateCurrentTrans({ slug: e.target.value })
+    updateCurrentTrans({ slug: e.target.value, slug_edited: true })
   }
 
   const handlePublishedChange = (e) => {
@@ -139,7 +141,7 @@ export default function EntryEdit() {
     if (!translations[lang]) {
       setTranslations((prev) => ({
         ...prev,
-        [lang]: { title: '', slug: '', field_values: {}, is_published: false },
+        [lang]: { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false },
       }))
     }
   }
@@ -156,7 +158,8 @@ export default function EntryEdit() {
       .map(([lang, t]) => ({
         language_code: lang,
         title: t.title,
-        slug: t.slug || slugify(t.title, lang),
+        slug: t.slug,
+        slug_edited: !!t.slug_edited,
         is_published: publishAll ? true : t.is_published,
         field_values: t.field_values || {},
       }))
@@ -168,16 +171,31 @@ export default function EntryEdit() {
 
     try {
       setSaving(true)
-      showToast('正在检查slug唯一性...', 'info')
 
       for (let i = 0; i < transList.length; i++) {
         const trans = transList[i]
-        const uniqueSlug = await generateUniqueSlug(
-          trans.title,
-          trans.language_code,
-          isEdit ? parseInt(entryId) : null
-        )
-        transList[i].slug = uniqueSlug
+        if (!trans.slug_edited) {
+          showToast(`正在为${languageNames[trans.language_code] || trans.language_code}版本生成唯一slug...`, 'info')
+          const uniqueSlug = await generateUniqueSlug(
+            trans.title,
+            trans.language_code,
+            isEdit ? parseInt(entryId) : null
+          )
+          transList[i].slug = uniqueSlug
+        } else {
+          if (!trans.slug?.trim()) {
+            showToast(`${languageNames[trans.language_code] || trans.language_code}版本slug不能为空`, 'error')
+            setSaving(false)
+            return
+          }
+          const res = await entriesApi.checkSlug(trans.slug, isEdit ? parseInt(entryId) : null)
+          if (!res.data.available) {
+            showToast(`${languageNames[trans.language_code] || trans.language_code}版本slug "${trans.slug}" 已被占用，请修改`, 'error')
+            setSaving(false)
+            return
+          }
+        }
+        delete transList[i].slug_edited
       }
 
       const payload = {

@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from app.core.database import AsyncSessionLocal
 from app.models.content import ContentType, Field, ContentEntry, EntryTranslation
 
@@ -38,27 +37,48 @@ async def create_fields_if_not_exists(db: AsyncSession, content_type_id: int, fi
 
 
 async def get_or_create_entry_with_translations(
-    db: AsyncSession, content_type_id: int, entry_slug: str, translations_data: list
+    db: AsyncSession, content_type_id: int, default_lang_slug: str, translations_data: list
 ):
-    result = await db.execute(
-        select(EntryTranslation)
-        .where(EntryTranslation.slug == entry_slug)
-        .options(selectinload(EntryTranslation.entry))
+    entry_id = None
+    trans_result = await db.execute(
+        select(EntryTranslation).where(EntryTranslation.slug == default_lang_slug)
     )
-    existing_trans = result.scalar_one_or_none()
-    if existing_trans:
-        print(f"  Entry with slug '{entry_slug}' already exists, skipping.")
+    default_trans = trans_result.scalar_one_or_none()
+
+    if default_trans:
+        entry_id = default_trans.entry_id
+        print(f"  Entry (id={entry_id}) already exists, checking translations...")
+
+        existing_result = await db.execute(
+            select(EntryTranslation).where(EntryTranslation.entry_id == entry_id)
+        )
+        existing_langs = {t.language_code for t in existing_result.scalars().all()}
+
+        added = 0
+        for td in translations_data:
+            if td["language_code"] not in existing_langs:
+                db.add(EntryTranslation(entry_id=entry_id, **td))
+                added += 1
+        if added > 0:
+            print(f"    + Added {added} missing translations")
+        else:
+            print(f"    All translations already exist")
         return None
+    else:
+        entry = ContentEntry(
+            content_type_id=content_type_id,
+            status="published",
+            published_at=datetime.utcnow(),
+        )
+        db.add(entry)
+        await db.flush()
+        entry_id = entry.id
 
-    entry = ContentEntry(content_type_id=content_type_id, status="published", published_at=datetime.utcnow())
-    db.add(entry)
-    await db.flush()
+        for td in translations_data:
+            db.add(EntryTranslation(entry_id=entry_id, **td))
 
-    for td in translations_data:
-        db.add(EntryTranslation(entry_id=entry.id, **td))
-
-    print(f"  + Created entry with {len(translations_data)} translations")
-    return entry
+        print(f"  + Created new entry (id={entry_id}) with {len(translations_data)} translations")
+        return entry
 
 
 async def seed_data():
