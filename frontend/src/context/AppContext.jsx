@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { usersApi, publicApi } from '../services/api'
 
 const AppContext = createContext()
@@ -13,11 +13,13 @@ export function AppProvider({ children }) {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
+  const logoutRef = useRef(null)
+
   useEffect(() => {
     loadLanguages()
     restoreUser()
     const handleAuthLogout = () => {
-      logout()
+      logoutRef.current?.()
     }
     window.addEventListener('auth:logout', handleAuthLogout)
     return () => {
@@ -90,6 +92,8 @@ export function AppProvider({ children }) {
     setIsLoginModalOpen(true)
     showToast('已退出登录', 'info')
   }, [])
+
+  logoutRef.current = logout
 
   const hasRole = useCallback((...roles) => {
     return roles.some(r => userRoles.includes(r))
