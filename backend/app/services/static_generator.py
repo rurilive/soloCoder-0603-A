@@ -1,6 +1,8 @@
+import re
 import shutil
 import json
 from datetime import datetime
+from html import unescape
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy import select, and_, func
@@ -107,13 +109,49 @@ def _get_ui_text(lang: str) -> Dict[str, str]:
     return UI_TEXT.get(lang, UI_TEXT["en"])
 
 
+def _strip_html_tags(html_text: str) -> str:
+    if not html_text:
+        return ""
+    text = re.sub(r"<script[^>]*>.*?</script>", "", html_text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<p[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<li[^>]*>", "\n• ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = unescape(text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    return text.strip()
+
+
 def _extract_text_filter(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
-        return value
-    if isinstance(value, (list, dict)):
-        return json.dumps(value, ensure_ascii=False)
+        return _strip_html_tags(value)
+    if isinstance(value, dict):
+        text_parts = []
+        for v in value.values():
+            if isinstance(v, str) and v:
+                cleaned = _strip_html_tags(v)
+                if cleaned and len(cleaned) > 1:
+                    text_parts.append(cleaned)
+        return " ".join(text_parts)
+    if isinstance(value, list):
+        text_parts = []
+        for item in value:
+            if isinstance(item, str):
+                cleaned = _strip_html_tags(item)
+                if cleaned:
+                    text_parts.append(cleaned)
+            elif isinstance(item, dict):
+                for v in item.values():
+                    if isinstance(v, str):
+                        cleaned = _strip_html_tags(v)
+                        if cleaned and len(cleaned) > 1:
+                            text_parts.append(cleaned)
+        return " ".join(text_parts)
     return str(value)
 
 
@@ -278,21 +316,54 @@ class StaticSiteGenerator:
                 slug_map[t.language_code] = t.published_version.slug
         return slug_map
 
+    def _get_plain_summary(self, field_values: Dict[str, Any]) -> str:
+        if not field_values:
+            return ""
+        priority_fields = ["summary", "description", "meta_description", "excerpt", "intro", "abstract"]
+        for field_name in priority_fields:
+            if field_name in field_values and field_values[field_name]:
+                cleaned = _extract_text_filter(field_values[field_name])
+                if cleaned:
+                    return cleaned
+        all_text = _extract_text_filter(field_values)
+        return all_text[:300]
+
+    def _build_field_info_map(self, content_type: ContentType, lang: str) -> Dict[str, Dict[str, Any]]:
+        info_map = {}
+        for f in content_type.fields:
+            info_map[f.name] = {
+                "type": f.field_type,
+                "label": f.get_label(lang) if lang else f.label,
+                "sort_order": f.sort_order,
+            }
+        return info_map
+
     def _serialize_entry_public(
-        self, entry: ContentEntry, lang: str, all_languages: bool = False
+        self,
+        entry: ContentEntry,
+        lang: str,
+        all_languages: bool = False,
+        content_type: Optional[ContentType] = None,
     ) -> Dict[str, Any]:
         trans = self._get_translation_for_lang(entry, lang)
         all_trans = self._get_all_translations(entry) if all_languages else None
+        ct = content_type or entry.content_type
+        field_info_map = self._build_field_info_map(ct, lang) if ct else {}
+        plain_summary = ""
+        if trans and trans.get("field_values"):
+            plain_summary = self._get_plain_summary(trans["field_values"])
         return {
             "id": entry.id,
             "content_type_id": entry.content_type_id,
-            "content_type_slug": entry.content_type.slug if entry.content_type else "",
+            "content_type_slug": ct.slug if ct else "",
             "status": entry.status,
             "current_version_number": entry.current_version_number,
             "published_at": entry.published_at.isoformat() if entry.published_at else None,
             "translation": trans,
             "translations": all_trans,
             "lang_slug_map": self._get_lang_slug_map(entry),
+            "field_info_map": field_info_map,
+            "plain_summary": plain_summary,
         }
 
     def _serialize_content_type_public(self, ct: ContentType, lang: Optional[str] = None) -> Dict[str, Any]:

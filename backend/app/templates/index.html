@@ -31,11 +31,33 @@
             {% endif %}
             {% if entry.translation and entry.translation.field_values %}
             <div class="entry-summary">
-                {% for field_name, field_value in entry.translation.field_values.items() %}
-                {% if field_value is string and field_value|length < 200 %}
-                <p><strong>{{ field_name }}:</strong> {{ field_value }}</p>
+                {% for field_name, field_info in entry.field_info_map.items() %}
+                {% set field_val = entry.translation.field_values.get(field_name) %}
+                {% if field_val is not none and field_val is not undefined and field_val != '' %}
+                {% if field_info.type == 'image' %}
+                <div class="field-image">
+                    <img src="{{ field_val }}" alt="{{ field_info.label }}" loading="lazy">
+                </div>
+                {% elif field_info.type == 'richtext' %}
+                <div class="field-richtext">{{ field_val|striptags|truncate(200) }}</div>
+                {% elif field_info.type == 'textarea' %}
+                <p class="field-textarea">{{ field_val|truncate(200) }}</p>
+                {% elif field_info.type in ('text', 'number', 'select', 'url', 'date', 'datetime') %}
+                {% if field_val is string and field_val|length < 200 %}
+                <p><strong>{{ field_info.label }}:</strong>
+                    {% if field_info.type == 'url' %}
+                    <a href="{{ field_val }}" target="_blank" rel="noopener">{{ field_val }}</a>
+                    {% else %}
+                    {{ field_val }}
+                    {% endif %}
+                </p>
+                {% endif %}
+                {% endif %}
                 {% endif %}
                 {% endfor %}
+                {% if entry.plain_summary and not entry.translation.field_values.get('summary') %}
+                <p class="entry-summary-text">{{ entry.plain_summary|truncate(200) }}</p>
+                {% endif %}
             </div>
             {% endif %}
             <div class="entry-meta">

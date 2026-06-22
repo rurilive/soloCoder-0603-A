@@ -20,11 +20,33 @@
 
         {% if entry.translation.field_values %}
         <div class="entry-summary">
-            {% for field_name, field_value in entry.translation.field_values.items() %}
-            {% if field_value is string and field_value|length < 300 %}
-            <p><strong>{{ field_name }}:</strong> {{ field_value[:200] }}{% if field_value|length > 200 %}...{% endif %}</p>
+            {% for field_name, field_info in entry.field_info_map.items() %}
+            {% set field_val = entry.translation.field_values.get(field_name) %}
+            {% if field_val is not none and field_val is not undefined and field_val != '' %}
+            {% if field_info.type == 'image' %}
+            <div class="field-image">
+                <img src="{{ field_val }}" alt="{{ field_info.label }}" loading="lazy">
+            </div>
+            {% elif field_info.type == 'richtext' %}
+            <div class="field-richtext">{{ field_val|striptags|truncate(300) }}</div>
+            {% elif field_info.type == 'textarea' %}
+            <p class="field-textarea">{{ field_val|truncate(200) }}</p>
+            {% elif field_info.type in ('text', 'number', 'select', 'url', 'date', 'datetime') %}
+            {% if field_val is string and field_val|length < 200 %}
+            <p><strong>{{ field_info.label }}:</strong>
+                {% if field_info.type == 'url' %}
+                <a href="{{ field_val }}" target="_blank" rel="noopener">{{ field_val }}</a>
+                {% else %}
+                {{ field_val }}
+                {% endif %}
+            </p>
+            {% endif %}
+            {% endif %}
             {% endif %}
             {% endfor %}
+            {% if entry.plain_summary and not entry.translation.field_values.get('summary') and not entry.translation.field_values.get('description') %}
+            <p class="entry-summary-text">{{ entry.plain_summary|truncate(200) }}</p>
+            {% endif %}
         </div>
         {% endif %}
         {% endif %}
@@ -48,11 +70,15 @@
 {% if total_pages > 1 %}
 <nav class="pagination">
     {% if current_page > 1 %}
-    <a href="{{ url_for_lang(lang, content_type.slug ~ '/?page=' ~ (current_page - 1)) }}" class="btn-link">&larr; {{ ui_text.prev }}</a>
+    {% if current_page == 2 %}
+    <a href="{{ url_for_lang(lang, content_type.slug ~ '/') }}" class="btn-link">&larr; {{ ui_text.prev }}</a>
+    {% else %}
+    <a href="{{ url_for_lang(lang, content_type.slug ~ '/page-' ~ (current_page - 1) ~ '.html') }}" class="btn-link">&larr; {{ ui_text.prev }}</a>
+    {% endif %}
     {% endif %}
     <span class="page-info">{{ current_page }} / {{ total_pages }}</span>
     {% if current_page < total_pages %}
-    <a href="{{ url_for_lang(lang, content_type.slug ~ '/?page=' ~ (current_page + 1)) }}" class="btn-link">{{ ui_text.next }} &rarr;</a>
+    <a href="{{ url_for_lang(lang, content_type.slug ~ '/page-' ~ (current_page + 1) ~ '.html') }}" class="btn-link">{{ ui_text.next }} &rarr;</a>
     {% endif %}
 </nav>
 {% endif %}
