@@ -373,15 +373,27 @@ class StaticSiteGenerator:
                 continue
 
             if field_name in summary_field_names:
-                if field_type in {"textarea", "text"} and isinstance(value, str) and len(value) <= 300:
-                    has_summary_field = True
-                    summary_display_fields.append({
-                        "name": field_name,
-                        "type": field_type,
-                        "label": label,
-                        "value": value,
-                    })
-                    shown_field_names.add(field_name)
+                has_summary_field = True
+                if field_type == "richtext":
+                    cleaned = _strip_html_tags(str(value))
+                    if cleaned and len(cleaned) >= 20:
+                        summary_display_fields.append({
+                            "name": field_name,
+                            "type": field_type,
+                            "label": label,
+                            "value": value,
+                            "plain_text": cleaned,
+                        })
+                        shown_field_names.add(field_name)
+                elif field_type in {"textarea", "text"}:
+                    if isinstance(value, str) and len(value) <= 300:
+                        summary_display_fields.append({
+                            "name": field_name,
+                            "type": field_type,
+                            "label": label,
+                            "value": value,
+                        })
+                        shown_field_names.add(field_name)
                 continue
 
             if field_type == "image":
