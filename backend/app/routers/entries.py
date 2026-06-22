@@ -181,8 +181,13 @@ async def update_entry(
         setattr(entry, key, value)
 
     await db.commit()
-    await db.refresh(entry)
-    return entry
+
+    result = await db.execute(
+        select(ContentEntry)
+        .options(selectinload(ContentEntry.translations).selectinload(EntryTranslation.published_version))
+        .where(ContentEntry.id == entry_id)
+    )
+    return result.scalar_one()
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -564,7 +569,7 @@ async def rollback_entry(
 ):
     result = await db.execute(
         select(ContentEntry)
-        .options(selectinload(ContentEntry.translations))
+        .options(selectinload(ContentEntry.translations).selectinload(EntryTranslation.published_version))
         .where(ContentEntry.id == entry_id)
     )
     entry = result.scalar_one_or_none()
