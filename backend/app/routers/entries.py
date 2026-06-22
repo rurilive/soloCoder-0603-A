@@ -76,9 +76,12 @@ async def create_entry(
                     detail=f"Slug '{trans_data.draft_slug}' is already in use",
                 )
 
+    has_any_published = any(t.is_published for t in data.translations)
+    entry_status = data.status if data.status else ("published" if has_any_published else "draft")
+
     entry = ContentEntry(
         content_type_id=data.content_type_id,
-        status=data.status,
+        status=entry_status,
     )
     db.add(entry)
     await db.flush()
@@ -95,7 +98,7 @@ async def create_entry(
             draft_field_values=trans_data.draft_field_values or {},
             draft_title=trans_data.draft_title,
             draft_slug=trans_data.draft_slug,
-            is_published=trans_data.is_published,
+            is_published=trans_data.is_published or False,
         )
         db.add(translation)
 
@@ -340,8 +343,9 @@ async def create_entry_translation(
     data: EntryTranslationCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ContentEntry).where(ContentEntry.id == entry_id))
-    if not result.scalar_one_or_none():
+    entry_result = await db.execute(select(ContentEntry).where(ContentEntry.id == entry_id))
+    entry = entry_result.scalar_one_or_none()
+    if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
     if data.language_code not in settings.SUPPORTED_LANGUAGES:
@@ -374,6 +378,10 @@ async def create_entry_translation(
 
     translation = EntryTranslation(entry_id=entry_id, **data.model_dump())
     db.add(translation)
+
+    if entry.current_version_number == 0 and entry.status != "draft":
+        entry.status = "draft"
+
     await db.commit()
     await db.refresh(translation)
 
@@ -420,6 +428,11 @@ async def update_entry_translation(
 
     for key, value in update_data.items():
         setattr(translation, key, value)
+
+    entry_result = await db.execute(select(ContentEntry).where(ContentEntry.id == entry_id))
+    entry = entry_result.scalar_one_or_none()
+    if entry and entry.current_version_number == 0 and entry.status != "draft":
+        entry.status = "draft"
 
     await db.commit()
 

@@ -299,33 +299,55 @@ async def public_get_entry_by_slug(
         raise HTTPException(status_code=404, detail="Content type not found")
 
     version_result = await db.execute(
-        select(ContentVersion).where(
+        select(ContentVersion)
+        .join(EntryTranslation, and_(
+            EntryTranslation.published_version_id == ContentVersion.id,
+            EntryTranslation.entry_id == ContentVersion.entry_id,
+            EntryTranslation.language_code == ContentVersion.language_code,
+        ))
+        .join(ContentEntry, ContentEntry.id == ContentVersion.entry_id)
+        .where(
             and_(
                 ContentVersion.slug == slug,
                 ContentVersion.language_code == language,
-                ContentVersion.is_published == True,
+                ContentEntry.content_type_id == ct.id,
+                ContentEntry.status == "published",
+                EntryTranslation.is_published == True,
             )
-        ).order_by(ContentVersion.version_number.desc())
+        )
     )
     version = version_result.scalars().first()
 
     if not version:
         version_result = await db.execute(
-            select(ContentVersion).where(
+            select(ContentVersion)
+            .join(EntryTranslation, and_(
+                EntryTranslation.published_version_id == ContentVersion.id,
+                EntryTranslation.entry_id == ContentVersion.entry_id,
+                EntryTranslation.language_code == ContentVersion.language_code,
+            ))
+            .join(ContentEntry, ContentEntry.id == ContentVersion.entry_id)
+            .where(
                 and_(
                     ContentVersion.slug == slug,
-                    ContentVersion.is_published == True,
+                    ContentEntry.content_type_id == ct.id,
+                    ContentEntry.status == "published",
+                    EntryTranslation.is_published == True,
                 )
-            ).order_by(ContentVersion.version_number.desc())
+            )
         )
         version = version_result.scalars().first()
 
     if not version:
         translation_result = await db.execute(
-            select(EntryTranslation).where(
+            select(EntryTranslation)
+            .join(ContentEntry, ContentEntry.id == EntryTranslation.entry_id)
+            .where(
                 and_(
                     EntryTranslation.draft_slug == slug,
                     EntryTranslation.is_published == True,
+                    ContentEntry.content_type_id == ct.id,
+                    ContentEntry.status == "published",
                 )
             )
         )
