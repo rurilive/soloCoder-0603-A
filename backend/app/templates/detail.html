@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entry.translation.title or 'Untitled' }} - {{ content_type.name }} - {{ site_name }}{% endblock %}
+{% block meta_description %}{{ entry.translation.field_values|extract_text|truncate(160) }}{% endblock %}
+
+{% block content %}
+<article class="entry-detail" data-entry-id="{{ entry.id }}" data-content-type="{{ content_type.slug }}" data-lang="{{ lang }}">
+    <header class="entry-header">
+        <nav class="breadcrumb">
+            <a href="{{ url_for_lang(lang, '') }}">{{ ui_text.home }}</a>
+            <span class="separator">/</span>
+            <a href="{{ url_for_lang(lang, content_type.slug ~ '/') }}">{{ content_type.name }}</a>
+            <span class="separator">/</span>
+            <span>{{ entry.translation.title or 'Untitled' }}</span>
+        </nav>
+        <h1>{{ entry.translation.title or 'Untitled' }}</h1>
+        <div class="entry-meta">
+            {% if entry.published_at %}
+            <time datetime="{{ entry.published_at }}">{{ entry.published_at }}</time>
+            {% endif %}
+            <span class="entry-type-badge">{{ content_type.name }}</span>
+        </div>
+    </header>
+
+    <div class="entry-body">
+        {% for field in content_type.fields %}
+        <div class="field-block" data-field-name="{{ field.name }}">
+            <h3 class="field-label">{{ field.label }}</h3>
+            <div class="field-value">
+                {% set val = entry.translation.field_values.get(field.name) %}
+                {% if val is none or val is undefined %}
+                <span class="empty-field">-</span>
+                {% elif field.field_type == 'richtext' %}
+                <div class="richtext-content">{{ val|safe }}</div>
+                {% elif field.field_type == 'image' %}
+                <img src="{{ val }}" alt="{{ field.label }}" loading="lazy">
+                {% elif field.field_type == 'url' %}
+                <a href="{{ val }}" target="_blank" rel="noopener">{{ val }}</a>
+                {% elif field.field_type == 'boolean' %}
+                <span class="bool-{{ val|lower }}">{{ 'Yes' if val else 'No' }}</span>
+                {% elif field.field_type == 'date' or field.field_type == 'datetime' %}
+                <time>{{ val }}</time>
+                {% elif field.field_type == 'number' %}
+                <span class="number-value">{{ val }}</span>
+                {% elif field.field_type == 'select' or field.field_type == 'multi_select' %}
+                {% if val is iterable and val is not string %}
+                <ul class="tag-list">
+                    {% for item in val %}<li>{{ item }}</li>{% endfor %}
+                </ul>
+                {% else %}
+                <span>{{ val }}</span>
+                {% endif %}
+                {% else %}
+                <p>{{ val }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if entry.translations and entry.translations|length > 1 %}
+    <aside class="other-languages">
+        <h3>{{ ui_text.other_languages }}</h3>
+        <ul class="lang-links-list">
+            {% for trans in entry.translations %}
+            {% if trans.language_code != lang and trans.title %}
+            <li>
+                <a href="{{ url_for_lang(trans.language_code, content_type.slug ~ '/' ~ trans.slug ~ '.html') }}">
+                    {{ lang_names[trans.language_code] }}: {{ trans.title }}
+                </a>
+            </li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+    </aside>
+    {% endif %}
+</article>
+{% endblock %}

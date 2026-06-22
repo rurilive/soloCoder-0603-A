@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ content_type.name }} - {{ site_name }}{% endblock %}
+{% block meta_description %}{{ content_type.description or '' }}{% endblock %}
+
+{% block content %}
+<section class="content-type-header">
+    <h1>{{ content_type.name }}</h1>
+    {% if content_type.description %}
+    <p class="type-description">{{ content_type.description }}</p>
+    {% endif %}
+</section>
+
+{% if entries %}
+<div class="entries-grid">
+    {% for entry in entries %}
+    <article class="entry-card">
+        {% if entry.translation %}
+        <h2><a href="{{ url_for_lang(lang, content_type.slug ~ '/' ~ entry.translation.slug ~ '.html') }}">{{ entry.translation.title or 'Untitled' }}</a></h2>
+
+        {% if entry.translation.field_values %}
+        <div class="entry-summary">
+            {% for field_name, field_value in entry.translation.field_values.items() %}
+            {% if field_value is string and field_value|length < 300 %}
+            <p><strong>{{ field_name }}:</strong> {{ field_value[:200] }}{% if field_value|length > 200 %}...{% endif %}</p>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <div class="entry-meta">
+            {% if entry.published_at %}
+            <time datetime="{{ entry.published_at }}">{{ entry.published_at }}</time>
+            {% endif %}
+        </div>
+
+        <a href="{{ url_for_lang(lang, content_type.slug ~ '/' ~ (entry.translation.slug if entry.translation else entry.id|string) ~ '.html') }}" class="btn-link">{{ ui_text.read_more }} &rarr;</a>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>{{ ui_text.no_entries }}</p>
+</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<nav class="pagination">
+    {% if current_page > 1 %}
+    <a href="{{ url_for_lang(lang, content_type.slug ~ '/?page=' ~ (current_page - 1)) }}" class="btn-link">&larr; {{ ui_text.prev }}</a>
+    {% endif %}
+    <span class="page-info">{{ current_page }} / {{ total_pages }}</span>
+    {% if current_page < total_pages %}
+    <a href="{{ url_for_lang(lang, content_type.slug ~ '/?page=' ~ (current_page + 1)) }}" class="btn-link">{{ ui_text.next }} &rarr;</a>
+    {% endif %}
+</nav>
+{% endif %}
+{% endblock %}

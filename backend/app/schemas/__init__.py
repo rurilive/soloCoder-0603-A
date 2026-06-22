@@ -60,6 +60,13 @@ from .user import (
     TranslationTaskDetailResponse,
     TranslationTaskStats,
 )
+from .static_page import (
+    StaticPageBase,
+    StaticPageResponse,
+    GenerateRequest,
+    GenerateResult,
+    StaticSiteStats,
+)
 
 __all__ = [
     "ContentTypeBase",
@@ -120,4 +127,9 @@ __all__ = [
     "TranslationTaskResponse",
     "TranslationTaskDetailResponse",
     "TranslationTaskStats",
+    "StaticPageBase",
+    "StaticPageResponse",
+    "GenerateRequest",
+    "GenerateResult",
+    "StaticSiteStats",
 ]

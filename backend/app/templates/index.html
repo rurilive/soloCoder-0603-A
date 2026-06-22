@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}{{ site_name }} - {{ lang_names[lang] }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>{{ site_name }}</h1>
+    <p class="hero-subtitle">{{ lang_names[lang] }}</p>
+</section>
+
+<section class="content-types-grid">
+    {% for ct in content_types %}
+    <div class="content-type-card">
+        <h2><a href="{{ url_for_lang(lang, ct.slug ~ '/') }}">{{ ct.name }}</a></h2>
+        {% if ct.description %}
+        <p>{{ ct.description }}</p>
+        {% endif %}
+        <a href="{{ url_for_lang(lang, ct.slug ~ '/') }}" class="btn-link">{{ ui_text.view_all }} &rarr;</a>
+    </div>
+    {% endfor %}
+</section>
+
+{% if recent_entries %}
+<section class="recent-entries">
+    <h2>{{ ui_text.recent_updates }}</h2>
+    <div class="entries-list">
+        {% for entry in recent_entries %}
+        <article class="entry-card">
+            {% if entry.translation and entry.translation.title %}
+            <h3><a href="{{ url_for_lang(lang, entry.content_type_slug ~ '/' ~ entry.translation.slug ~ '.html') }}">{{ entry.translation.title }}</a></h3>
+            {% endif %}
+            {% if entry.translation and entry.translation.field_values %}
+            <div class="entry-summary">
+                {% for field_name, field_value in entry.translation.field_values.items() %}
+                {% if field_value is string and field_value|length < 200 %}
+                <p><strong>{{ field_name }}:</strong> {{ field_value }}</p>
+                {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div class="entry-meta">
+                <span class="entry-type">{{ entry.content_type_slug }}</span>
+                {% if entry.published_at %}
+                <time>{{ entry.published_at }}</time>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

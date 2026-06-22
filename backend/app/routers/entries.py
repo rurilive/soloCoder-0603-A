@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy import select, and_, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -21,6 +21,7 @@ from ..schemas.content import (
     RollbackRequest,
     DraftPreviewResponse,
 )
+from ..services.static_generator import get_static_generator
 
 router = APIRouter()
 
@@ -209,6 +210,7 @@ async def delete_entry(
 async def publish_entry(
     entry_id: int,
     data: Optional[PublishRequest] = None,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
     if data is None:
@@ -289,6 +291,15 @@ async def publish_entry(
     await db.commit()
     await db.refresh(entry)
 
+    if settings.STATIC_SITE_AUTO_GENERATE:
+        published_lang = data.language_code if data.language_code else None
+        generator = get_static_generator()
+        background_tasks.add_task(
+            generator.handle_entry_publish,
+            entry_id=entry_id,
+            language_code=published_lang,
+        )
+
     result = await db.execute(
         select(ContentEntry)
         .options(selectinload(ContentEntry.translations).selectinload(EntryTranslation.published_version))
@@ -301,6 +312,7 @@ async def publish_entry(
 async def unpublish_entry(
     entry_id: int,
     language_code: Optional[str] = Query(None, description="Unpublish specific language, or all if not specified"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -341,6 +353,14 @@ async def unpublish_entry(
 
     await db.commit()
     await db.refresh(entry)
+
+    if settings.STATIC_SITE_AUTO_GENERATE:
+        generator = get_static_generator()
+        background_tasks.add_task(
+            generator.handle_entry_unpublish,
+            entry_id=entry_id,
+            language_code=language_code,
+        )
 
     result = await db.execute(
         select(ContentEntry)

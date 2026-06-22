@@ -6,6 +6,7 @@ from .translation import (
     TranslationReview,
     TranslationComment,
 )
+from .static_page import StaticPage
 
 __all__ = [
     "ContentType",
@@ -21,4 +22,5 @@ __all__ = [
     "TranslationTaskHistory",
     "TranslationReview",
     "TranslationComment",
+    "StaticPage",
 ]

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ site_name }}{% endblock %}</title>
+    <meta name="description" content="{% block meta_description %}{% endblock %}">
+    <meta name="generator" content="MultiLingual CMS Static Generator">
+    <link rel="stylesheet" href="{{ asset_prefix }}/css/site.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <nav class="nav-main">
+                <a href="{{ url_for_lang(lang, '') }}" class="site-logo">{{ site_name }}</a>
+                <div class="nav-links">
+                    {% for ct in content_types %}
+                    <a href="{{ url_for_lang(lang, ct.slug ~ '/') }}" class="nav-link">{{ ct.name }}</a>
+                    {% endfor %}
+                </div>
+                <div class="lang-switcher">
+                    {% for lc in supported_languages %}
+                    {% if lc != lang %}
+                    <a href="{{ url_for_lang(lc, page_path_suffix) }}" class="lang-link">{{ lang_names[lc] }}</a>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main class="site-main">
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <div class="footer-content">
+                <p>&copy; {{ site_name }}</p>
+                <div class="footer-langs">
+                    {% for lc in supported_languages %}
+                    <a href="{{ url_for_lang(lc, '') }}">{{ lang_names[lc] }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+    window.__CMS_API_BASE__ = "{{ api_base_url }}";
+    window.__CMS_LANG__ = "{{ lang }}";
+    window.__CMS_DYNAMIC_MODE__ = false;
+    </script>
+    <script src="{{ asset_prefix }}/js/dynamic-fallback.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

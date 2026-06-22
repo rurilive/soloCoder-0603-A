@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
 from typing import List
@@ -16,6 +17,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
     CORS_ORIGINS: List[str] = ["*"]
+
+    STATIC_SITE_OUTPUT_DIR: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static_site")
+    STATIC_SITE_BASE_URL: str = "/"
+    STATIC_SITE_ENABLED: bool = True
+    STATIC_SITE_AUTO_GENERATE: bool = True
 
     class Config:
         env_file = ".env"
