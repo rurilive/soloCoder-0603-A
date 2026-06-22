@@ -157,17 +157,36 @@ class StaticSiteGenerator:
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(html, encoding="utf-8")
 
-    def _build_common_context(self, lang: str, page_path_suffix: str = "") -> Dict[str, Any]:
+    def _build_common_context(
+        self,
+        lang: str,
+        content_types: List[Dict[str, Any]],
+        page_path_suffix: str = "",
+        lang_slug_map: Optional[Dict[str, str]] = None,
+        content_type_slug: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        def _get_lang_switch_path(target_lang: str) -> str:
+            if lang_slug_map and content_type_slug:
+                if target_lang in lang_slug_map:
+                    return self._url_for_lang(target_lang, f"{content_type_slug}/{lang_slug_map[target_lang]}.html")
+                else:
+                    if content_type_slug:
+                        return self._url_for_lang(target_lang, f"{content_type_slug}/")
+                    return self._url_for_lang(target_lang, "")
+            return self._url_for_lang(target_lang, page_path_suffix)
+
         return {
             "site_name": settings.PROJECT_NAME,
             "lang": lang,
             "lang_names": LANG_NAMES,
             "supported_languages": settings.SUPPORTED_LANGUAGES,
             "url_for_lang": self._url_for_lang,
+            "get_lang_switch_path": _get_lang_switch_path,
             "asset_prefix": self._asset_prefix(),
             "api_base_url": self._api_base_url(),
             "page_path_suffix": page_path_suffix,
             "ui_text": _get_ui_text(lang),
+            "content_types": content_types,
         }
 
     async def _fetch_content_types(self, db: AsyncSession) -> List[ContentType]:
@@ -252,6 +271,13 @@ class StaticSiteGenerator:
                 })
         return result
 
+    def _get_lang_slug_map(self, entry: ContentEntry) -> Dict[str, str]:
+        slug_map = {}
+        for t in entry.translations:
+            if t.is_published and t.published_version and t.published_version.slug:
+                slug_map[t.language_code] = t.published_version.slug
+        return slug_map
+
     def _serialize_entry_public(
         self, entry: ContentEntry, lang: str, all_languages: bool = False
     ) -> Dict[str, Any]:
@@ -266,24 +292,27 @@ class StaticSiteGenerator:
             "published_at": entry.published_at.isoformat() if entry.published_at else None,
             "translation": trans,
             "translations": all_trans,
+            "lang_slug_map": self._get_lang_slug_map(entry),
         }
 
-    def _serialize_content_type_public(self, ct: ContentType) -> Dict[str, Any]:
+    def _serialize_content_type_public(self, ct: ContentType, lang: Optional[str] = None) -> Dict[str, Any]:
+        name = ct.get_name(lang) if lang else ct.name
+        description = ct.get_description(lang) if lang else ct.description
         return {
             "id": ct.id,
-            "name": ct.name,
+            "name": name,
             "slug": ct.slug,
-            "description": ct.description,
+            "description": description,
             "fields": [
                 {
                     "id": f.id,
                     "name": f.name,
-                    "label": f.label,
+                    "label": f.get_label(lang) if lang else f.label,
                     "field_type": f.field_type,
                     "is_required": f.is_required,
                     "is_translatable": f.is_translatable,
                     "options": f.options,
-                    "description": f.description,
+                    "description": f.get_description(lang) if lang else f.description,
                     "sort_order": f.sort_order,
                 }
                 for f in sorted(ct.fields, key=lambda x: x.sort_order)
@@ -336,15 +365,19 @@ class StaticSiteGenerator:
     async def render_home_page(self, db: AsyncSession, lang: str) -> Tuple[str, str, Dict[str, Any]]:
         page_path = f"{lang}/index.html"
         content_types = await self._fetch_content_types(db)
+        ct_public_localized = [self._serialize_content_type_public(ct, lang) for ct in content_types]
         recent_entries_raw = await self._fetch_published_entries(db, limit=10)
         recent_entries = [
             self._serialize_entry_public(e, lang)
             for e in recent_entries_raw
             if self._get_translation_for_lang(e, lang)
         ]
-        ctx = self._build_common_context(lang, page_path_suffix="")
+        ctx = self._build_common_context(
+            lang,
+            content_types=ct_public_localized,
+            page_path_suffix="",
+        )
         ctx.update({
-            "content_types": [self._serialize_content_type_public(ct) for ct in content_types],
             "recent_entries": recent_entries,
         })
         template = self.jinja_env.get_template("index.html")
@@ -363,6 +396,9 @@ class StaticSiteGenerator:
         content_type: ContentType,
         page: int = 1,
     ) -> Tuple[str, str, Dict[str, Any]]:
+        all_content_types = await self._fetch_content_types(db)
+        ct_public_localized = [self._serialize_content_type_public(ct, lang) for ct in all_content_types]
+
         all_entries_raw = await self._fetch_published_entries(
             db, content_type_id=content_type.id, language_code=lang
         )
@@ -376,14 +412,17 @@ class StaticSiteGenerator:
 
         if page == 1:
             page_path = f"{lang}/{content_type.slug}/index.html"
+            page_suffix = f"{content_type.slug}/"
         else:
             page_path = f"{lang}/{content_type.slug}/page-{page}.html"
+            page_suffix = f"{content_type.slug}/page-{page}.html"
 
         ctx = self._build_common_context(
             lang,
-            page_path_suffix=f"{content_type.slug}/" if page == 1 else f"{content_type.slug}/page-{page}.html",
+            content_types=ct_public_localized,
+            page_path_suffix=page_suffix,
         )
-        ct_public = self._serialize_content_type_public(content_type)
+        ct_public = self._serialize_content_type_public(content_type, lang)
         ctx.update({
             "content_type": ct_public,
             "entries": entries,
@@ -412,13 +451,21 @@ class StaticSiteGenerator:
         if not trans or not trans.get("slug"):
             return None, None, None
 
+        all_content_types = await self._fetch_content_types(db)
+        ct_public_localized = [self._serialize_content_type_public(ct, lang) for ct in all_content_types]
+
         page_path = f"{lang}/{content_type.slug}/{trans['slug']}.html"
         entry_public = self._serialize_entry_public(entry, lang, all_languages=True)
-        ct_public = self._serialize_content_type_public(content_type)
+        ct_public = self._serialize_content_type_public(content_type, lang)
+
+        lang_slug_map = entry_public.get("lang_slug_map", {})
 
         ctx = self._build_common_context(
             lang,
+            content_types=ct_public_localized,
             page_path_suffix=f"{content_type.slug}/{trans['slug']}.html",
+            lang_slug_map=lang_slug_map,
+            content_type_slug=content_type.slug,
         )
         ctx.update({
             "entry": entry_public,

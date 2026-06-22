@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional, Dict, Any
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 
@@ -10,8 +11,10 @@ class ContentType(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False, index=True)
+    names = Column(JSON, default={})
     slug = Column(String(100), unique=True, nullable=False, index=True)
     description = Column(String(500), nullable=True)
+    descriptions = Column(JSON, default={})
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -28,6 +31,16 @@ class ContentType(Base):
         cascade="all, delete-orphan",
     )
 
+    def get_name(self, lang: str) -> str:
+        if self.names and lang in self.names and self.names[lang]:
+            return self.names[lang]
+        return self.name
+
+    def get_description(self, lang: str) -> Optional[str]:
+        if self.descriptions and lang in self.descriptions and self.descriptions[lang]:
+            return self.descriptions[lang]
+        return self.description
+
 
 class Field(Base):
     __tablename__ = "fields"
@@ -37,6 +50,7 @@ class Field(Base):
     content_type_id = Column(Integer, ForeignKey("content_types.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     label = Column(String(200), nullable=False)
+    labels = Column(JSON, default={})
     field_type = Column(String(50), nullable=False)
     is_required = Column(Boolean, default=False)
     is_unique = Column(Boolean, default=False)
@@ -44,11 +58,22 @@ class Field(Base):
     default_value = Column(JSON, nullable=True)
     options = Column(JSON, nullable=True)
     description = Column(String(500), nullable=True)
+    descriptions = Column(JSON, default={})
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     content_type = relationship("ContentType", back_populates="fields")
+
+    def get_label(self, lang: str) -> str:
+        if self.labels and lang in self.labels and self.labels[lang]:
+            return self.labels[lang]
+        return self.label
+
+    def get_description(self, lang: str) -> Optional[str]:
+        if self.descriptions and lang in self.descriptions and self.descriptions[lang]:
+            return self.descriptions[lang]
+        return self.description
 
 
 class ContentEntry(Base):

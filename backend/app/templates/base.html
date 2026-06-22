@@ -22,7 +22,7 @@
                 <div class="lang-switcher">
                     {% for lc in supported_languages %}
                     {% if lc != lang %}
-                    <a href="{{ url_for_lang(lc, page_path_suffix) }}" class="lang-link">{{ lang_names[lc] }}</a>
+                    <a href="{{ get_lang_switch_path(lc) }}" class="lang-link">{{ lang_names[lc] }}</a>
                     {% endif %}
                     {% endfor %}
                 </div>

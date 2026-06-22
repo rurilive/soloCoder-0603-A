@@ -5,8 +5,10 @@ from pydantic import BaseModel, Field
 
 class ContentTypeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    names: Optional[Dict[str, str]] = Field(default_factory=dict)
     slug: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
+    descriptions: Optional[Dict[str, str]] = Field(default_factory=dict)
     is_active: Optional[bool] = True
 
 
@@ -16,14 +18,17 @@ class ContentTypeCreate(ContentTypeBase):
 
 class ContentTypeUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    names: Optional[Dict[str, str]] = None
     slug: Optional[str] = Field(None, min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
+    descriptions: Optional[Dict[str, str]] = None
     is_active: Optional[bool] = None
 
 
 class FieldBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=200)
+    labels: Optional[Dict[str, str]] = Field(default_factory=dict)
     field_type: str = Field(..., min_length=1, max_length=50)
     is_required: Optional[bool] = False
     is_unique: Optional[bool] = False
@@ -31,6 +36,7 @@ class FieldBase(BaseModel):
     default_value: Optional[Any] = None
     options: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = Field(None, max_length=500)
+    descriptions: Optional[Dict[str, str]] = Field(default_factory=dict)
     sort_order: Optional[int] = 0
 
 
@@ -41,6 +47,7 @@ class FieldCreate(FieldBase):
 class FieldUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     label: Optional[str] = Field(None, min_length=1, max_length=200)
+    labels: Optional[Dict[str, str]] = None
     field_type: Optional[str] = Field(None, min_length=1, max_length=50)
     is_required: Optional[bool] = None
     is_unique: Optional[bool] = None
@@ -48,6 +55,7 @@ class FieldUpdate(BaseModel):
     default_value: Optional[Any] = None
     options: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = Field(None, max_length=500)
+    descriptions: Optional[Dict[str, str]] = None
     sort_order: Optional[int] = None
 
 

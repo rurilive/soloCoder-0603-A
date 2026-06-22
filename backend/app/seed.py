@@ -8,13 +8,31 @@ from app.models.content import ContentType, Field, ContentEntry, EntryTranslatio
 from app.models.user import User, Role, Permission, RolePermission
 
 
-async def get_or_create_content_type(db: AsyncSession, slug: str, name: str, description: str):
+async def get_or_create_content_type(db: AsyncSession, slug: str, name: str, description: str, names: dict = None, descriptions: dict = None):
     result = await db.execute(select(ContentType).where(ContentType.slug == slug))
     ct = result.scalar_one_or_none()
     if ct:
-        print(f"  Content type '{slug}' already exists, skipping.")
+        updated = False
+        if names and (not ct.names or ct.names != names):
+            ct.names = names
+            updated = True
+        if descriptions and (not ct.descriptions or ct.descriptions != descriptions):
+            ct.descriptions = descriptions
+            updated = True
+        if updated:
+            await db.flush()
+            print(f"  Content type '{slug}' exists, updated localized names.")
+        else:
+            print(f"  Content type '{slug}' already exists, skipping.")
         return ct, False
-    ct = ContentType(slug=slug, name=name, description=description, is_active=True)
+    ct = ContentType(
+        slug=slug,
+        name=name,
+        description=description,
+        names=names or {},
+        descriptions=descriptions or {},
+        is_active=True
+    )
     db.add(ct)
     await db.flush()
     print(f"  + Created content type: {name} ({slug})")
@@ -27,13 +45,34 @@ async def create_fields_if_not_exists(db: AsyncSession, content_type_id: int, fi
     )
     existing = {f.name: f for f in result.scalars().all()}
     created = 0
+    updated = 0
     for fd in fields_data:
+        labels = fd.pop("labels", None)
+        descriptions = fd.pop("descriptions", None)
         if fd["name"] not in existing:
-            db.add(Field(content_type_id=content_type_id, **fd))
+            field_data = {**fd}
+            if labels:
+                field_data["labels"] = labels
+            if descriptions:
+                field_data["descriptions"] = descriptions
+            db.add(Field(content_type_id=content_type_id, **field_data))
             created += 1
+        else:
+            field = existing[fd["name"]]
+            field_updated = False
+            if labels and (not field.labels or field.labels != labels):
+                field.labels = labels
+                field_updated = True
+            if descriptions and (not field.descriptions or field.descriptions != descriptions):
+                field.descriptions = descriptions
+                field_updated = True
+            if field_updated:
+                updated += 1
     if created > 0:
         print(f"    + Created {created} fields")
-    else:
+    if updated > 0:
+        print(f"    ~ Updated {updated} fields with localized labels")
+    if created == 0 and updated == 0:
         print(f"    Fields already exist, skipping.")
     return created
 
@@ -260,30 +299,55 @@ async def seed_data():
         await seed_users_roles(db)
 
         print("\nContent Types:")
-        article_type, _ = await get_or_create_content_type(db, "article", "文章", "网站文章内容，支持多语言")
+        article_type, _ = await get_or_create_content_type(
+            db, "article", "文章", "网站文章内容，支持多语言",
+            names={"en": "Articles", "ja": "記事", "ko": "기사", "fr": "Articles", "de": "Artikel", "es": "Artículos"},
+            descriptions={"en": "Website articles, multi-language supported", "ja": "ウェブサイト記事、多言語対応", "ko": "웹사이트 기사, 다국어 지원", "fr": "Articles de site web, support multilingue", "de": "Website-Artikel, mehrsprachig unterstützt", "es": "Artículos del sitio web, con soporte multilingüe"}
+        )
         await create_fields_if_not_exists(db, article_type.id, [
-            {"name": "title", "label": "标题", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1},
-            {"name": "body", "label": "正文", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2},
-            {"name": "summary", "label": "摘要", "field_type": "textarea", "is_required": False, "is_translatable": True, "sort_order": 3},
-            {"name": "cover_image", "label": "封面图", "field_type": "image", "is_required": False, "is_translatable": False, "sort_order": 4},
+            {"name": "title", "label": "标题", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1,
+             "labels": {"en": "Title", "ja": "タイトル", "ko": "제목", "fr": "Titre", "de": "Titel", "es": "Título"}},
+            {"name": "body", "label": "正文", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2,
+             "labels": {"en": "Body", "ja": "本文", "ko": "본문", "fr": "Corps", "de": "Inhalt", "es": "Cuerpo"}},
+            {"name": "summary", "label": "摘要", "field_type": "textarea", "is_required": False, "is_translatable": True, "sort_order": 3,
+             "labels": {"en": "Summary", "ja": "概要", "ko": "요약", "fr": "Résumé", "de": "Zusammenfassung", "es": "Resumen"}},
+            {"name": "cover_image", "label": "封面图", "field_type": "image", "is_required": False, "is_translatable": False, "sort_order": 4,
+             "labels": {"en": "Cover Image", "ja": "カバー画像", "ko": "커버 이미지", "fr": "Image de couverture", "de": "Titelbild", "es": "Imagen de portada"}},
             {"name": "status_type", "label": "状态标签", "field_type": "select", "is_required": False, "is_translatable": False, "sort_order": 5,
+             "labels": {"en": "Status Tag", "ja": "ステータスタグ", "ko": "상태 태그", "fr": "Étiquette de statut", "de": "Status-Tag", "es": "Etiqueta de estado"},
              "options": [{"label": "置顶", "value": "sticky"}, {"label": "精选", "value": "featured"}, {"label": "普通", "value": "normal"}]},
         ])
 
-        product_type, _ = await get_or_create_content_type(db, "product", "产品", "产品展示内容")
+        product_type, _ = await get_or_create_content_type(
+            db, "product", "产品", "产品展示内容",
+            names={"en": "Products", "ja": "製品", "ko": "제품", "fr": "Produits", "de": "Produkte", "es": "Productos"},
+            descriptions={"en": "Product showcase content", "ja": "製品紹介コンテンツ", "ko": "제품 전시 콘텐츠", "fr": "Contenu de vitrine de produits", "de": "Produktpräsentation", "es": "Contenido de exhibición de productos"}
+        )
         await create_fields_if_not_exists(db, product_type.id, [
-            {"name": "name", "label": "产品名称", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1},
-            {"name": "description", "label": "产品描述", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2},
-            {"name": "price", "label": "价格", "field_type": "number", "is_required": True, "is_translatable": False, "sort_order": 3},
-            {"name": "image", "label": "产品图片", "field_type": "image", "is_required": False, "is_translatable": False, "sort_order": 4},
-            {"name": "category", "label": "分类", "field_type": "text", "is_required": False, "is_translatable": True, "sort_order": 5},
+            {"name": "name", "label": "产品名称", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1,
+             "labels": {"en": "Product Name", "ja": "製品名", "ko": "제품명", "fr": "Nom du produit", "de": "Produktname", "es": "Nombre del producto"}},
+            {"name": "description", "label": "产品描述", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2,
+             "labels": {"en": "Description", "ja": "製品説明", "ko": "제품 설명", "fr": "Description", "de": "Beschreibung", "es": "Descripción"}},
+            {"name": "price", "label": "价格", "field_type": "number", "is_required": True, "is_translatable": False, "sort_order": 3,
+             "labels": {"en": "Price", "ja": "価格", "ko": "가격", "fr": "Prix", "de": "Preis", "es": "Precio"}},
+            {"name": "image", "label": "产品图片", "field_type": "image", "is_required": False, "is_translatable": False, "sort_order": 4,
+             "labels": {"en": "Product Image", "ja": "製品画像", "ko": "제품 이미지", "fr": "Image du produit", "de": "Produktbild", "es": "Imagen del producto"}},
+            {"name": "category", "label": "分类", "field_type": "text", "is_required": False, "is_translatable": True, "sort_order": 5,
+             "labels": {"en": "Category", "ja": "カテゴリ", "ko": "카테고리", "fr": "Catégorie", "de": "Kategorie", "es": "Categoría"}},
         ])
 
-        page_type, _ = await get_or_create_content_type(db, "page", "页面", "静态页面内容")
+        page_type, _ = await get_or_create_content_type(
+            db, "page", "页面", "静态页面内容",
+            names={"en": "Pages", "ja": "ページ", "ko": "페이지", "fr": "Pages", "de": "Seiten", "es": "Páginas"},
+            descriptions={"en": "Static page content", "ja": "静的ページコンテンツ", "ko": "정적 페이지 콘텐츠", "fr": "Contenu de page statique", "de": "Statischer Seiteninhalt", "es": "Contenido de página estática"}
+        )
         await create_fields_if_not_exists(db, page_type.id, [
-            {"name": "title", "label": "页面标题", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1},
-            {"name": "content", "label": "页面内容", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2},
-            {"name": "meta_description", "label": "SEO描述", "field_type": "textarea", "is_required": False, "is_translatable": True, "sort_order": 3},
+            {"name": "title", "label": "页面标题", "field_type": "text", "is_required": True, "is_translatable": True, "sort_order": 1,
+             "labels": {"en": "Page Title", "ja": "ページタイトル", "ko": "페이지 제목", "fr": "Titre de la page", "de": "Seitentitel", "es": "Título de la página"}},
+            {"name": "content", "label": "页面内容", "field_type": "richtext", "is_required": True, "is_translatable": True, "sort_order": 2,
+             "labels": {"en": "Page Content", "ja": "ページコンテンツ", "ko": "페이지 내용", "fr": "Contenu de la page", "de": "Seiteninhalt", "es": "Contenido de la página"}},
+            {"name": "meta_description", "label": "SEO描述", "field_type": "textarea", "is_required": False, "is_translatable": True, "sort_order": 3,
+             "labels": {"en": "SEO Description", "ja": "SEO説明", "ko": "SEO 설명", "fr": "Description SEO", "de": "SEO-Beschreibung", "es": "Descripción SEO"}},
         ])
 
         print("\nContent Entries:")
