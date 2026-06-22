@@ -104,7 +104,13 @@ async def create_entry(
 
     await db.commit()
     await db.refresh(entry)
-    return entry
+
+    result = await db.execute(
+        select(ContentEntry)
+        .options(selectinload(ContentEntry.translations).selectinload(EntryTranslation.published_version))
+        .where(ContentEntry.id == entry.id)
+    )
+    return result.scalar_one()
 
 
 @router.get("/", response_model=List[EntryWithTranslationsResponse])

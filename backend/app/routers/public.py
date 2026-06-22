@@ -181,11 +181,9 @@ async def public_list_entries(
         if not trans_response:
             continue
 
-        all_trans_response = (
-            [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
-            if all_languages
-            else None
-        )
+        all_trans_response = None
+        if all_languages:
+            all_trans_response = [r for t in published_translations if (r := _build_trans_response(t)) is not None]
 
         response.append(
             PublicEntryResponse(
@@ -256,11 +254,9 @@ async def public_get_entry_by_id(
     if not trans_response:
         raise HTTPException(status_code=404, detail="No published translation found")
 
-    all_trans_response = (
-        [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
-        if all_languages
-        else None
-    )
+    all_trans_response = None
+    if all_languages:
+        all_trans_response = [r for t in published_translations if (r := _build_trans_response(t)) is not None]
 
     return PublicEntryResponse(
         id=entry.id,
@@ -397,11 +393,9 @@ async def public_get_entry_by_slug(
             field_values=version.field_values or {},
         )
 
-    all_trans_response = (
-        [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
-        if all_languages
-        else None
-    )
+    all_trans_response = None
+    if all_languages:
+        all_trans_response = [r for t in published_translations if (r := _build_trans_response(t)) is not None]
 
     return PublicEntryResponse(
         id=entry.id,

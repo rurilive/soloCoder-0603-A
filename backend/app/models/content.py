@@ -76,6 +76,20 @@ class ContentEntry(Base):
         lazy="dynamic",
     )
 
+    @property
+    def has_unpublished_changes(self) -> bool:
+        for t in self.translations:
+            if t.published_version:
+                if t.draft_title != t.published_version.title:
+                    return True
+                if t.draft_slug != t.published_version.slug:
+                    return True
+                if t.draft_field_values != (t.published_version.field_values or {}):
+                    return True
+            elif t.draft_title or t.draft_field_values:
+                return True
+        return False
+
 
 class EntryTranslation(Base):
     __tablename__ = "entry_translations"

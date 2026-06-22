@@ -71,12 +71,7 @@ export default function Entries() {
   }
 
   const hasUnpublishedChanges = (entry) => {
-    return entry.translations.some((t) => {
-      if (!t.published_version) return !!t.draft_title
-      return t.draft_title !== t.published_version.title ||
-        t.draft_slug !== t.published_version.slug ||
-        JSON.stringify(t.draft_field_values || {}) !== JSON.stringify(t.published_version.field_values || {})
-    })
+    return entry.has_unpublished_changes
   }
 
   if (loading) {

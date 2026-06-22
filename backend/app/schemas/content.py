@@ -152,6 +152,7 @@ class ContentEntryResponse(BaseModel):
     content_type_id: int
     status: str
     current_version_number: int = 0
+    has_unpublished_changes: bool = False
     created_at: datetime
     updated_at: datetime
     published_at: Optional[datetime] = None
