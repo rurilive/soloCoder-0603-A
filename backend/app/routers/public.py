@@ -113,7 +113,7 @@ async def public_get_content_type(
     )
 
 
-def _build_trans_response(translation: EntryTranslation) -> PublicEntryTranslationResponse:
+def _build_trans_response(translation: EntryTranslation) -> Optional[PublicEntryTranslationResponse]:
     if translation.published_version:
         pv = translation.published_version
         return PublicEntryTranslationResponse(
@@ -122,12 +122,7 @@ def _build_trans_response(translation: EntryTranslation) -> PublicEntryTranslati
             slug=pv.slug,
             field_values=pv.field_values or {},
         )
-    return PublicEntryTranslationResponse(
-        language_code=translation.language_code,
-        title=translation.draft_title,
-        slug=translation.draft_slug,
-        field_values=translation.draft_field_values or {},
-    )
+    return None
 
 
 @router.get("/entries/{content_type_slug}", response_model=List[PublicEntryResponse])
@@ -171,7 +166,7 @@ async def public_list_entries(
 
     response = []
     for entry in entries:
-        published_translations = [t for t in entry.translations if t.is_published]
+        published_translations = [t for t in entry.translations if t.is_published and t.published_version_id]
         target_translation = next(
             (t for t in published_translations if t.language_code == language),
             None,
@@ -183,9 +178,11 @@ async def public_list_entries(
             continue
 
         trans_response = _build_trans_response(target_translation)
+        if not trans_response:
+            continue
 
         all_trans_response = (
-            [_build_trans_response(t) for t in published_translations]
+            [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
             if all_languages
             else None
         )
@@ -244,7 +241,7 @@ async def public_get_entry_by_id(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    published_translations = [t for t in entry.translations if t.is_published]
+    published_translations = [t for t in entry.translations if t.is_published and t.published_version_id]
     target_translation = next(
         (t for t in published_translations if t.language_code == language),
         None,
@@ -256,9 +253,11 @@ async def public_get_entry_by_id(
         raise HTTPException(status_code=404, detail="No published translation found")
 
     trans_response = _build_trans_response(target_translation)
+    if not trans_response:
+        raise HTTPException(status_code=404, detail="No published translation found")
 
     all_trans_response = (
-        [_build_trans_response(t) for t in published_translations]
+        [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
         if all_languages
         else None
     )
@@ -310,6 +309,7 @@ async def public_get_entry_by_slug(
             and_(
                 ContentVersion.slug == slug,
                 ContentVersion.language_code == language,
+                ContentVersion.is_published == True,
                 ContentEntry.content_type_id == ct.id,
                 ContentEntry.status == "published",
                 EntryTranslation.is_published == True,
@@ -330,6 +330,7 @@ async def public_get_entry_by_slug(
             .where(
                 and_(
                     ContentVersion.slug == slug,
+                    ContentVersion.is_published == True,
                     ContentEntry.content_type_id == ct.id,
                     ContentEntry.status == "published",
                     EntryTranslation.is_published == True,
@@ -339,61 +340,6 @@ async def public_get_entry_by_slug(
         version = version_result.scalars().first()
 
     if not version:
-        translation_result = await db.execute(
-            select(EntryTranslation)
-            .join(ContentEntry, ContentEntry.id == EntryTranslation.entry_id)
-            .where(
-                and_(
-                    EntryTranslation.draft_slug == slug,
-                    EntryTranslation.is_published == True,
-                    ContentEntry.content_type_id == ct.id,
-                    ContentEntry.status == "published",
-                )
-            )
-        )
-        fallback_trans = translation_result.scalars().first()
-        if fallback_trans:
-            entry_result = await db.execute(
-                select(ContentEntry)
-                .options(selectinload(ContentEntry.translations).selectinload(EntryTranslation.published_version))
-                .where(
-                    and_(
-                        ContentEntry.id == fallback_trans.entry_id,
-                        ContentEntry.content_type_id == ct.id,
-                        ContentEntry.status == "published",
-                    )
-                )
-            )
-            entry = entry_result.scalar_one_or_none()
-            if not entry:
-                raise HTTPException(status_code=404, detail="Entry not found")
-
-            published_translations = [t for t in entry.translations if t.is_published]
-            target_translation = next(
-                (t for t in published_translations if t.language_code == language),
-                None,
-            )
-            if not target_translation:
-                target_translation = fallback_trans
-
-            trans_response = _build_trans_response(target_translation)
-            all_trans_response = (
-                [_build_trans_response(t) for t in published_translations]
-                if all_languages
-                else None
-            )
-
-            return PublicEntryResponse(
-                id=entry.id,
-                content_type_id=entry.content_type_id,
-                content_type_slug=ct.slug,
-                status=entry.status,
-                current_version_number=entry.current_version_number,
-                published_at=entry.published_at,
-                translation=trans_response,
-                translations=all_trans_response,
-            )
-
         raise HTTPException(status_code=404, detail="Entry not found")
 
     entry_result = await db.execute(
@@ -411,7 +357,7 @@ async def public_get_entry_by_slug(
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    published_translations = [t for t in entry.translations if t.is_published]
+    published_translations = [t for t in entry.translations if t.is_published and t.published_version_id]
     target_translation = next(
         (t for t in published_translations if t.language_code == language),
         None,
@@ -443,9 +389,16 @@ async def public_get_entry_by_slug(
         )
 
     trans_response = _build_trans_response(target_translation)
+    if not trans_response:
+        trans_response = PublicEntryTranslationResponse(
+            language_code=version.language_code,
+            title=version.title,
+            slug=version.slug,
+            field_values=version.field_values or {},
+        )
 
     all_trans_response = (
-        [_build_trans_response(t) for t in published_translations]
+        [_build_trans_response(t) for t in published_translations if _build_trans_response(t)]
         if all_languages
         else None
     )

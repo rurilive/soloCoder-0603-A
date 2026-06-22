@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -214,6 +214,27 @@ async def publish_entry(
 
     new_version_number = entry.current_version_number + 1
 
+    languages_to_publish = []
+    for translation in entry.translations:
+        if data.language_code is not None and translation.language_code != data.language_code:
+            continue
+        if not translation.draft_title:
+            continue
+        languages_to_publish.append(translation.language_code)
+
+    if languages_to_publish:
+        await db.execute(
+            update(ContentVersion)
+            .where(
+                and_(
+                    ContentVersion.entry_id == entry_id,
+                    ContentVersion.language_code.in_(languages_to_publish),
+                    ContentVersion.is_published == True,
+                )
+            )
+            .values(is_published=False)
+        )
+
     for translation in entry.translations:
         if data.language_code is not None and translation.language_code != data.language_code:
             continue
@@ -283,6 +304,25 @@ async def unpublish_entry(
     for translation in entry.translations:
         if language_code is None or translation.language_code == language_code:
             translation.is_published = False
+
+    unpublish_langs = []
+    if language_code:
+        unpublish_langs = [language_code]
+    else:
+        unpublish_langs = [t.language_code for t in entry.translations]
+
+    if unpublish_langs:
+        await db.execute(
+            update(ContentVersion)
+            .where(
+                and_(
+                    ContentVersion.entry_id == entry_id,
+                    ContentVersion.language_code.in_(unpublish_langs),
+                    ContentVersion.is_published == True,
+                )
+            )
+            .values(is_published=False)
+        )
 
     has_published = any(t.is_published for t in entry.translations)
     if not has_published:
@@ -541,6 +581,21 @@ async def rollback_entry(
         raise HTTPException(status_code=404, detail="Version not found")
 
     new_version_number = entry.current_version_number + 1
+
+    rollback_languages = [v.language_code for v in versions]
+
+    if rollback_languages:
+        await db.execute(
+            update(ContentVersion)
+            .where(
+                and_(
+                    ContentVersion.entry_id == entry_id,
+                    ContentVersion.language_code.in_(rollback_languages),
+                    ContentVersion.is_published == True,
+                )
+            )
+            .values(is_published=False)
+        )
 
     for version in versions:
         translation = next(
