@@ -8,6 +8,7 @@ import ContentTypeForm from './pages/ContentTypeForm.jsx'
 import FieldsManager from './pages/FieldsManager.jsx'
 import Entries from './pages/Entries.jsx'
 import EntryEdit from './pages/EntryEdit.jsx'
+import EntryVersions from './pages/EntryVersions.jsx'
 import TranslationTasks from './pages/TranslationTasks.jsx'
 import TranslationTaskDetail from './pages/TranslationTaskDetail.jsx'
 import ReviewWorkbench from './pages/ReviewWorkbench.jsx'
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="entries/:contentTypeSlug" element={<Entries />} />
           <Route path="entries/:contentTypeSlug/new" element={<EntryEdit />} />
           <Route path="entries/:contentTypeSlug/:entryId/edit" element={<EntryEdit />} />
+          <Route path="entries/:contentTypeSlug/:entryId/versions" element={<EntryVersions />} />
           <Route path="translation" element={<TranslationTasks />} />
           <Route path="translation/review" element={<ReviewWorkbench />} />
           <Route path="translation/:id" element={<TranslationTaskDetail />} />

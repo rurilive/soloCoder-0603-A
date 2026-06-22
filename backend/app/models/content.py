@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 
 from ..core.database import Base
@@ -57,6 +57,7 @@ class ContentEntry(Base):
     id = Column(Integer, primary_key=True, index=True)
     content_type_id = Column(Integer, ForeignKey("content_types.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(20), default="draft")
+    current_version_number = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     published_at = Column(DateTime, nullable=True)
@@ -67,6 +68,12 @@ class ContentEntry(Base):
         back_populates="entry",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+    versions = relationship(
+        "ContentVersion",
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        lazy="dynamic",
     )
 
 
@@ -79,11 +86,35 @@ class EntryTranslation(Base):
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("content_entries.id", ondelete="CASCADE"), nullable=False)
     language_code = Column(String(10), nullable=False, index=True)
-    field_values = Column(JSON, default={})
-    title = Column(String(500), nullable=True)
-    slug = Column(String(500), nullable=True, unique=True, index=True)
+    draft_field_values = Column(JSON, default={})
+    draft_title = Column(String(500), nullable=True)
+    draft_slug = Column(String(500), nullable=True, index=True)
     is_published = Column(Boolean, default=False)
+    published_version_id = Column(Integer, ForeignKey("content_versions.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     entry = relationship("ContentEntry", back_populates="translations")
+    published_version = relationship("ContentVersion", foreign_keys=[published_version_id])
+
+
+class ContentVersion(Base):
+    __tablename__ = "content_versions"
+    __table_args__ = (
+        UniqueConstraint("entry_id", "language_code", "version_number", name="uq_version_entry_lang_num"),
+        Index("ix_content_versions_entry_lang", "entry_id", "language_code"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    entry_id = Column(Integer, ForeignKey("content_entries.id", ondelete="CASCADE"), nullable=False)
+    language_code = Column(String(10), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False)
+    field_values = Column(JSON, default={})
+    title = Column(String(500), nullable=True)
+    slug = Column(String(500), nullable=True)
+    is_published = Column(Boolean, default=False)
+    change_summary = Column(String(500), nullable=True)
+    created_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    entry = relationship("ContentEntry", back_populates="versions")

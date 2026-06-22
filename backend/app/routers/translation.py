@@ -85,7 +85,7 @@ async def get_source_field_values(
     translation = result.scalar_one_or_none()
     if not translation:
         return {}
-    return translation.field_values or {}
+    return translation.draft_field_values or {}
 
 
 @router.post("/", response_model=List[TranslationTaskResponse], status_code=status.HTTP_201_CREATED)
@@ -461,12 +461,12 @@ async def update_task_status(
         )
         translation_entry = entry_result.scalar_one_or_none()
         if translation_entry:
-            translation_entry.field_values = task.translated_field_values
+            translation_entry.draft_field_values = task.translated_field_values
         else:
             new_translation = EntryTranslation(
                 entry_id=task.entry_id,
                 language_code=task.target_language,
-                field_values=task.translated_field_values,
+                draft_field_values=task.translated_field_values,
             )
             db.add(new_translation)
 

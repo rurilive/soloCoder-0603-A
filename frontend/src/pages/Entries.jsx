@@ -43,8 +43,8 @@ export default function Entries() {
 
   const handlePublish = async (entry) => {
     try {
-      await entriesApi.publish(entry.id)
-      showToast('已发布')
+      await entriesApi.publish(entry.id, {})
+      showToast('已发布新版本')
       loadData()
     } catch (e) {
       showToast('操作失败: ' + (e.response?.data?.detail || e.message), 'error')
@@ -63,11 +63,20 @@ export default function Entries() {
 
   const getDefaultTitle = (entry) => {
     const defaultTrans = entry.translations.find((t) => t.language_code === defaultLanguage)
-    if (defaultTrans) return defaultTrans.title || defaultTrans.field_values?.title
+    if (defaultTrans) return defaultTrans.draft_title || defaultTrans.published_version?.title
     if (entry.translations.length > 0) {
-      return entry.translations[0].title || entry.translations[0].field_values?.title
+      return entry.translations[0].draft_title || entry.translations[0].published_version?.title
     }
     return null
+  }
+
+  const hasUnpublishedChanges = (entry) => {
+    return entry.translations.some((t) => {
+      if (!t.published_version) return !!t.draft_title
+      return t.draft_title !== t.published_version.title ||
+        t.draft_slug !== t.published_version.slug ||
+        JSON.stringify(t.draft_field_values || {}) !== JSON.stringify(t.published_version.field_values || {})
+    })
   }
 
   if (loading) {
@@ -109,6 +118,7 @@ export default function Entries() {
                   <th>标题</th>
                   <th>翻译版本</th>
                   <th>状态</th>
+                  <th>版本</th>
                   <th>更新时间</th>
                   <th>操作</th>
                 </tr>
@@ -116,6 +126,7 @@ export default function Entries() {
               <tbody>
                 {entries.map((entry) => {
                   const title = getDefaultTitle(entry)
+                  const unpublished = hasUnpublishedChanges(entry)
                   return (
                     <tr key={entry.id}>
                       <td>#{entry.id}</td>
@@ -138,17 +149,30 @@ export default function Entries() {
                         </div>
                       </td>
                       <td>
-                        {entry.status === 'published' ? (
-                          <span className="badge badge-success">已发布</span>
-                        ) : (
-                          <span className="badge badge-warning">草稿</span>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {entry.status === 'published' ? (
+                            <span className="badge badge-success">已发布</span>
+                          ) : (
+                            <span className="badge badge-warning">草稿</span>
+                          )}
+                          {unpublished && (
+                            <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: 11 }}>
+                              有未发布更改
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: '#4f46e5' }}>v{entry.current_version_number || 0}</span>
                       </td>
                       <td>{new Date(entry.updated_at).toLocaleString('zh-CN')}</td>
                       <td>
                         <div className="action-buttons">
                           <Link to={`/entries/${contentTypeSlug}/${entry.id}/edit`} className="btn btn-sm btn-secondary">
                             编辑
+                          </Link>
+                          <Link to={`/entries/${contentTypeSlug}/${entry.id}/versions`} className="btn btn-sm btn-secondary">
+                            版本
                           </Link>
                           {entry.status === 'published' ? (
                             <button className="btn btn-sm btn-warning" onClick={() => handleUnpublish(entry)}>

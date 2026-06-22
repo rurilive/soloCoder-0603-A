@@ -49,9 +49,12 @@ export default function EntryEdit() {
   const [currentLang, setCurrentLang] = useState(defaultLanguage)
   const [translations, setTranslations] = useState({})
   const [entryStatus, setEntryStatus] = useState('draft')
+  const [currentVersionNumber, setCurrentVersionNumber] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showTranslateModal, setShowTranslateModal] = useState(false)
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [changeSummary, setChangeSummary] = useState('')
   const [translateForm, setTranslateForm] = useState({
     source_language: defaultLanguage,
     target_languages: [],
@@ -75,14 +78,21 @@ export default function EntryEdit() {
         const entryRes = await entriesApi.get(entryId)
         const entry = entryRes.data
         setEntryStatus(entry.status)
+        setCurrentVersionNumber(entry.current_version_number || 0)
         const transMap = {}
         entry.translations.forEach((t) => {
+          const pubVer = t.published_version
           transMap[t.language_code] = {
-            title: t.title || '',
-            slug: t.slug || '',
-            slug_edited: !!t.slug,
+            draft_title: t.draft_title || '',
+            draft_slug: t.draft_slug || '',
+            slug_edited: !!t.draft_slug,
             is_published: t.is_published,
-            field_values: { ...t.field_values },
+            draft_field_values: { ...(t.draft_field_values || {}) },
+            published_version: pubVer || null,
+            has_unpublished_changes: pubVer
+              ? (t.draft_title !== pubVer.title || t.draft_slug !== pubVer.slug ||
+                JSON.stringify(t.draft_field_values || {}) !== JSON.stringify(pubVer.field_values || {}))
+              : !!t.draft_title,
           }
         })
         setTranslations(transMap)
@@ -90,11 +100,13 @@ export default function EntryEdit() {
         const initial = {}
         languages.forEach((lang) => {
           initial[lang] = {
-            title: '',
-            slug: '',
+            draft_title: '',
+            draft_slug: '',
             slug_edited: false,
             is_published: false,
-            field_values: {},
+            draft_field_values: {},
+            published_version: null,
+            has_unpublished_changes: false,
           }
         })
         setTranslations(initial)
@@ -106,12 +118,12 @@ export default function EntryEdit() {
     }
   }
 
-  const getCurrentTrans = () => translations[currentLang] || { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false }
+  const getCurrentTrans = () => translations[currentLang] || { draft_title: '', draft_slug: '', slug_edited: false, draft_field_values: {}, is_published: false }
 
   const updateCurrentTrans = (updater) => {
     setTranslations((prev) => {
       const next = { ...prev }
-      const curr = next[currentLang] || { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false }
+      const curr = next[currentLang] || { draft_title: '', draft_slug: '', slug_edited: false, draft_field_values: {}, is_published: false }
       next[currentLang] = typeof updater === 'function' ? updater(curr) : { ...curr, ...updater }
       return next
     })
@@ -120,25 +132,25 @@ export default function EntryEdit() {
   const handleFieldChange = (fieldName, value) => {
     updateCurrentTrans((curr) => ({
       ...curr,
-      field_values: { ...curr.field_values, [fieldName]: value },
+      draft_field_values: { ...curr.draft_field_values, [fieldName]: value },
     }))
   }
 
   const handleTitleChange = (e) => {
     const title = e.target.value
     updateCurrentTrans((curr) => {
-      const newSlug = !curr.slug_edited && curr.slug === '' ? slugify(title, currentLang) : curr.slug
+      const newSlug = !curr.slug_edited && curr.draft_slug === '' ? slugify(title, currentLang) : curr.draft_slug
       return {
         ...curr,
-        title,
-        slug: newSlug,
-        field_values: { ...curr.field_values, title },
+        draft_title: title,
+        draft_slug: newSlug,
+        draft_field_values: { ...curr.draft_field_values, title },
       }
     })
   }
 
   const handleSlugChange = (e) => {
-    updateCurrentTrans({ slug: e.target.value, slug_edited: true })
+    updateCurrentTrans({ draft_slug: e.target.value, slug_edited: true })
   }
 
   const handlePublishedChange = (e) => {
@@ -149,27 +161,27 @@ export default function EntryEdit() {
     if (!translations[lang]) {
       setTranslations((prev) => ({
         ...prev,
-        [lang]: { title: '', slug: '', slug_edited: false, field_values: {}, is_published: false },
+        [lang]: { draft_title: '', draft_slug: '', slug_edited: false, draft_field_values: {}, is_published: false, published_version: null, has_unpublished_changes: false },
       }))
     }
   }
 
   const handleSave = async (publishAll = false) => {
     const current = getCurrentTrans()
-    if (!current.title?.trim()) {
+    if (!current.draft_title?.trim()) {
       showToast(`请先填写${languageNames[currentLang] || currentLang}标题`, 'error')
       return
     }
 
     let transList = Object.entries(translations)
-      .filter(([, t]) => t.title?.trim() || Object.keys(t.field_values || {}).length > 0)
+      .filter(([, t]) => t.draft_title?.trim() || Object.keys(t.draft_field_values || {}).length > 0)
       .map(([lang, t]) => ({
         language_code: lang,
-        title: t.title,
-        slug: t.slug,
+        draft_title: t.draft_title,
+        draft_slug: t.draft_slug,
         slug_edited: !!t.slug_edited,
         is_published: publishAll ? true : t.is_published,
-        field_values: t.field_values || {},
+        draft_field_values: t.draft_field_values || {},
       }))
 
     if (transList.length === 0) {
@@ -185,31 +197,25 @@ export default function EntryEdit() {
         if (!trans.slug_edited) {
           showToast(`正在为${languageNames[trans.language_code] || trans.language_code}版本生成唯一slug...`, 'info')
           const uniqueSlug = await generateUniqueSlug(
-            trans.title,
+            trans.draft_title,
             trans.language_code,
             isEdit ? parseInt(entryId) : null
           )
-          transList[i].slug = uniqueSlug
+          transList[i].draft_slug = uniqueSlug
         } else {
-          if (!trans.slug?.trim()) {
+          if (!trans.draft_slug?.trim()) {
             showToast(`${languageNames[trans.language_code] || trans.language_code}版本slug不能为空`, 'error')
             setSaving(false)
             return
           }
-          const res = await entriesApi.checkSlug(trans.slug, isEdit ? parseInt(entryId) : null)
+          const res = await entriesApi.checkSlug(trans.draft_slug, isEdit ? parseInt(entryId) : null)
           if (!res.data.available) {
-            showToast(`${languageNames[trans.language_code] || trans.language_code}版本slug "${trans.slug}" 已被占用，请修改`, 'error')
+            showToast(`${languageNames[trans.language_code] || trans.language_code}版本slug "${trans.draft_slug}" 已被占用，请修改`, 'error')
             setSaving(false)
             return
           }
         }
         delete transList[i].slug_edited
-      }
-
-      const payload = {
-        content_type_id: contentType.id,
-        status: publishAll ? 'published' : entryStatus,
-        translations: transList,
       }
 
       if (isEdit) {
@@ -223,14 +229,40 @@ export default function EntryEdit() {
             await entriesApi.createTranslation(entryId, trans)
           }
         }
+        if (publishAll) {
+          await entriesApi.publish(entryId, { change_summary: changeSummary || undefined })
+        }
         showToast('保存成功')
       } else {
-        await entriesApi.create(payload)
+        const payload = {
+          content_type_id: contentType.id,
+          status: publishAll ? 'published' : 'draft',
+          translations: transList,
+        }
+        const createRes = await entriesApi.create(payload)
+        if (publishAll && createRes.data.id) {
+          await entriesApi.publish(createRes.data.id, { change_summary: changeSummary || undefined })
+        }
         showToast('创建成功')
       }
       navigate(`/entries/${contentTypeSlug}`)
     } catch (e) {
       showToast('保存失败: ' + (e.response?.data?.detail || e.message), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handlePublish = async () => {
+    try {
+      setSaving(true)
+      await entriesApi.publish(entryId, { change_summary: changeSummary || undefined })
+      showToast('发布成功，已生成新版本')
+      setShowPublishModal(false)
+      setChangeSummary('')
+      loadData()
+    } catch (e) {
+      showToast('发布失败: ' + (e.response?.data?.detail || e.message), 'error')
     } finally {
       setSaving(false)
     }
@@ -271,7 +303,7 @@ export default function EntryEdit() {
 
   const renderFieldInput = (field) => {
     const trans = getCurrentTrans()
-    const value = trans.field_values?.[field.name] ?? ''
+    const value = trans.draft_field_values?.[field.name] ?? ''
     const isLocked = !field.is_translatable && currentLang !== defaultLanguage
 
     const commonProps = {
@@ -359,6 +391,11 @@ export default function EntryEdit() {
           <h1 className="page-title">
             {isEdit ? '编辑条目' : '新建条目'} - {contentType?.name}
           </h1>
+          {isEdit && currentVersionNumber > 0 && (
+            <div style={{ color: '#6b7280', fontSize: 13, marginTop: 4 }}>
+              当前版本: v{currentVersionNumber}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <Link to={`/entries/${contentTypeSlug}`} className="btn btn-secondary">返回列表</Link>
@@ -367,12 +404,21 @@ export default function EntryEdit() {
               🌐 发起翻译任务
             </button>
           )}
+          <Link to={`/entries/${contentTypeSlug}/${entryId}/versions`} className="btn btn-secondary" style={{ display: isEdit ? '' : 'none' }}>
+            📋 版本历史
+          </Link>
           <button className="btn btn-secondary" onClick={() => handleSave(false)} disabled={saving}>
             {saving ? '保存中...' : '保存草稿'}
           </button>
-          <button className="btn btn-success" onClick={() => handleSave(true)} disabled={saving}>
-            {saving ? '保存中...' : '保存并发布'}
-          </button>
+          {isEdit ? (
+            <button className="btn btn-success" onClick={() => setShowPublishModal(true)} disabled={saving}>
+              {saving ? '发布中...' : '发布新版本'}
+            </button>
+          ) : (
+            <button className="btn btn-success" onClick={() => handleSave(true)} disabled={saving}>
+              {saving ? '保存中...' : '保存并发布'}
+            </button>
+          )}
         </div>
       </div>
       <div className="page-body">
@@ -381,7 +427,8 @@ export default function EntryEdit() {
             {languages.map((lang) => {
               ensureTranslationExists(lang)
               const t = translations[lang]
-              const hasContent = t?.title?.trim() || Object.keys(t?.field_values || {}).some((k) => t.field_values[k])
+              const hasContent = t?.draft_title?.trim() || Object.keys(t?.draft_field_values || {}).some((k) => t.draft_field_values[k])
+              const hasUnpublished = t?.has_unpublished_changes
               return (
                 <button
                   key={lang}
@@ -391,6 +438,7 @@ export default function EntryEdit() {
                   <span className={`dot ${t?.is_published ? 'published' : ''}`}></span>
                   {languageNames[lang] || lang}
                   {hasContent && <span style={{ color: '#3b82f6', marginLeft: 4 }}>✓</span>}
+                  {hasUnpublished && <span style={{ color: '#f59e0b', marginLeft: 2, fontSize: 10 }}>●</span>}
                 </button>
               )
             })}
@@ -398,6 +446,12 @@ export default function EntryEdit() {
 
           <div>
             <h3 className="section-title">{languageNames[currentLang] || currentLang} 版本内容</h3>
+
+            {currentTrans.has_unpublished_changes && (
+              <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 6, padding: '8px 12px', marginBottom: 16, fontSize: 13, color: '#92400e' }}>
+                ⚠️ 当前草稿与已发布版本有差异，保存草稿不会影响线上内容。点击"发布新版本"可将草稿发布为新版本。
+              </div>
+            )}
 
             <div className="form-row">
               <div className="form-group">
@@ -407,7 +461,7 @@ export default function EntryEdit() {
                 <input
                   type="text"
                   className="form-input"
-                  value={currentTrans.title}
+                  value={currentTrans.draft_title}
                   onChange={handleTitleChange}
                   placeholder="输入标题"
                 />
@@ -417,7 +471,7 @@ export default function EntryEdit() {
                 <input
                   type="text"
                   className="form-input"
-                  value={currentTrans.slug}
+                  value={currentTrans.draft_slug}
                   onChange={handleSlugChange}
                   placeholder="留空将自动生成"
                 />
@@ -464,6 +518,38 @@ export default function EntryEdit() {
           </div>
         </div>
       </div>
+
+      {showPublishModal && (
+        <div className="modal-backdrop" onClick={() => setShowPublishModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">发布新版本</h3>
+              <button className="modal-close" onClick={() => setShowPublishModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 16 }}>
+                发布后，当前草稿内容将生成为新版本 (v{currentVersionNumber + 1})，线上已发布的旧版本仍保留。
+              </p>
+              <div className="form-group">
+                <label className="form-label">版本说明（可选）</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={changeSummary}
+                  onChange={(e) => setChangeSummary(e.target.value)}
+                  placeholder="例如：更新产品价格、修复错别字等"
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowPublishModal(false)}>取消</button>
+              <button className="btn btn-success" onClick={handlePublish} disabled={saving}>
+                {saving ? '发布中...' : '确认发布'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTranslateModal && (
         <div className="modal-backdrop" onClick={() => setShowTranslateModal(false)}>

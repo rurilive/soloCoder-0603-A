@@ -1,4 +1,4 @@
-from .content import ContentType, Field, ContentEntry, EntryTranslation
+from .content import ContentType, Field, ContentEntry, EntryTranslation, ContentVersion
 from .user import User, Role, Permission, RolePermission
 from .translation import (
     TranslationTask,
@@ -12,6 +12,7 @@ __all__ = [
     "Field",
     "ContentEntry",
     "EntryTranslation",
+    "ContentVersion",
     "User",
     "Role",
     "Permission",

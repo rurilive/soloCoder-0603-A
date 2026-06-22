@@ -62,7 +62,7 @@ export const entriesApi = {
   create: (data) => api.post('/entries/', data),
   update: (id, data) => api.put(`/entries/${id}`, data),
   delete: (id) => api.delete(`/entries/${id}`),
-  publish: (id, languageCode) => api.post(`/entries/${id}/publish`, null, { params: languageCode ? { language_code: languageCode } : {} }),
+  publish: (id, data) => api.post(`/entries/${id}/publish`, data || {}),
   unpublish: (id, languageCode) => api.post(`/entries/${id}/unpublish`, null, { params: languageCode ? { language_code: languageCode } : {} }),
   listTranslations: (entryId) => api.get(`/entries/${entryId}/translations`),
   getTranslation: (entryId, languageCode) => api.get(`/entries/${entryId}/translations/${languageCode}`),
@@ -70,6 +70,10 @@ export const entriesApi = {
   updateTranslation: (entryId, languageCode, data) => api.put(`/entries/${entryId}/translations/${languageCode}`, data),
   deleteTranslation: (entryId, languageCode) => api.delete(`/entries/${entryId}/translations/${languageCode}`),
   checkSlug: (slug, excludeEntryId) => api.get('/entries/check-slug', { params: { slug, exclude_entry_id: excludeEntryId } }),
+  listVersions: (entryId, params) => api.get(`/entries/${entryId}/versions`, { params }),
+  getVersion: (entryId, versionId) => api.get(`/entries/${entryId}/versions/${versionId}`),
+  rollback: (entryId, data) => api.post(`/entries/${entryId}/rollback`, data),
+  draftPreview: (entryId, params) => api.get(`/entries/${entryId}/draft-preview`, { params }),
 }
 
 export const usersApi = {

@@ -73,9 +73,9 @@ class ContentTypeResponse(ContentTypeBase):
 
 class EntryTranslationBase(BaseModel):
     language_code: str = Field(..., min_length=1, max_length=10)
-    field_values: Optional[Dict[str, Any]] = {}
-    title: Optional[str] = Field(None, max_length=500)
-    slug: Optional[str] = Field(None, max_length=500)
+    draft_field_values: Optional[Dict[str, Any]] = {}
+    draft_title: Optional[str] = Field(None, max_length=500)
+    draft_slug: Optional[str] = Field(None, max_length=500)
     is_published: Optional[bool] = False
 
 
@@ -84,30 +84,49 @@ class EntryTranslationCreate(EntryTranslationBase):
 
 
 class EntryTranslationUpdate(BaseModel):
-    field_values: Optional[Dict[str, Any]] = None
-    title: Optional[str] = Field(None, max_length=500)
-    slug: Optional[str] = Field(None, max_length=500)
+    draft_field_values: Optional[Dict[str, Any]] = None
+    draft_title: Optional[str] = Field(None, max_length=500)
+    draft_slug: Optional[str] = Field(None, max_length=500)
     is_published: Optional[bool] = None
 
 
 class TranslationValueCreate(BaseModel):
     language_code: str = Field(..., min_length=1, max_length=10)
-    field_values: Dict[str, Any] = {}
-    title: Optional[str] = Field(None, max_length=500)
-    slug: Optional[str] = Field(None, max_length=500)
+    draft_field_values: Optional[Dict[str, Any]] = {}
+    draft_title: Optional[str] = Field(None, max_length=500)
+    draft_slug: Optional[str] = Field(None, max_length=500)
     is_published: Optional[bool] = False
 
 
 class TranslationValueUpdate(BaseModel):
-    field_values: Optional[Dict[str, Any]] = None
-    title: Optional[str] = Field(None, max_length=500)
-    slug: Optional[str] = Field(None, max_length=500)
+    draft_field_values: Optional[Dict[str, Any]] = None
+    draft_title: Optional[str] = Field(None, max_length=500)
+    draft_slug: Optional[str] = Field(None, max_length=500)
     is_published: Optional[bool] = None
+
+
+class ContentVersionResponse(BaseModel):
+    id: int
+    entry_id: int
+    language_code: str
+    version_number: int
+    field_values: Dict[str, Any] = {}
+    title: Optional[str] = None
+    slug: Optional[str] = None
+    is_published: bool
+    change_summary: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class EntryTranslationResponse(EntryTranslationBase):
     id: int
     entry_id: int
+    published_version_id: Optional[int] = None
+    published_version: Optional[ContentVersionResponse] = None
     created_at: datetime
     updated_at: datetime
 
@@ -132,6 +151,7 @@ class ContentEntryResponse(BaseModel):
     id: int
     content_type_id: int
     status: str
+    current_version_number: int = 0
     created_at: datetime
     updated_at: datetime
     published_at: Optional[datetime] = None
@@ -145,3 +165,24 @@ class EntryWithTranslationsResponse(ContentEntryResponse):
 
     class Config:
         from_attributes = True
+
+
+class PublishRequest(BaseModel):
+    language_code: Optional[str] = Field(None, description="Publish specific language, or all if not specified")
+    change_summary: Optional[str] = Field(None, max_length=500)
+
+
+class RollbackRequest(BaseModel):
+    version_number: int = Field(..., description="Version number to rollback to")
+    language_code: Optional[str] = Field(None, description="Rollback specific language, or all if not specified")
+    change_summary: Optional[str] = Field(None, max_length=500)
+
+
+class DraftPreviewResponse(BaseModel):
+    entry_id: int
+    language_code: str
+    draft_title: Optional[str] = None
+    draft_slug: Optional[str] = None
+    draft_field_values: Dict[str, Any] = {}
+    published_version: Optional[ContentVersionResponse] = None
+    has_unpublished_changes: bool = False

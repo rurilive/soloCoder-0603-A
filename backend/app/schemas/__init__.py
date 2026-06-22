@@ -18,6 +18,10 @@ from .content import (
     EntryWithTranslationsResponse,
     TranslationValueUpdate,
     TranslationValueCreate,
+    ContentVersionResponse,
+    PublishRequest,
+    RollbackRequest,
+    DraftPreviewResponse,
 )
 from .user import (
     RoleBase,
@@ -77,6 +81,10 @@ __all__ = [
     "EntryWithTranslationsResponse",
     "TranslationValueUpdate",
     "TranslationValueCreate",
+    "ContentVersionResponse",
+    "PublishRequest",
+    "RollbackRequest",
+    "DraftPreviewResponse",
     "RoleBase",
     "RoleCreate",
     "RoleUpdate",

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import AsyncSessionLocal
 from app.core.security import hash_password
-from app.models.content import ContentType, Field, ContentEntry, EntryTranslation
+from app.models.content import ContentType, Field, ContentEntry, EntryTranslation, ContentVersion
 from app.models.user import User, Role, Permission, RolePermission
 
 
@@ -43,7 +43,7 @@ async def get_or_create_entry_with_translations(
 ):
     entry_id = None
     trans_result = await db.execute(
-        select(EntryTranslation).where(EntryTranslation.slug == default_lang_slug)
+        select(EntryTranslation).where(EntryTranslation.draft_slug == default_lang_slug)
     )
     default_trans = trans_result.scalar_one_or_none()
 
@@ -71,15 +71,41 @@ async def get_or_create_entry_with_translations(
             content_type_id=content_type_id,
             status="published",
             published_at=datetime.utcnow(),
+            current_version_number=1,
         )
         db.add(entry)
         await db.flush()
         entry_id = entry.id
 
         for td in translations_data:
-            db.add(EntryTranslation(entry_id=entry_id, **td))
+            trans_data = {
+                "entry_id": entry_id,
+                "language_code": td["language_code"],
+                "draft_field_values": td.get("field_values", {}) or td.get("draft_field_values", {}),
+                "draft_title": td.get("title"),
+                "draft_slug": td.get("slug"),
+                "is_published": td.get("is_published", False),
+            }
+            translation = EntryTranslation(**trans_data)
+            db.add(translation)
+            await db.flush()
 
-        print(f"  + Created new entry (id={entry_id}) with {len(translations_data)} translations")
+            version = ContentVersion(
+                entry_id=entry_id,
+                language_code=td["language_code"],
+                version_number=1,
+                field_values=td.get("field_values", {}) or td.get("draft_field_values", {}),
+                title=td.get("title"),
+                slug=td.get("slug"),
+                is_published=True,
+                change_summary="Initial version",
+            )
+            db.add(version)
+            await db.flush()
+
+            translation.published_version_id = version.id
+
+        print(f"  + Created new entry (id={entry_id}) with {len(translations_data)} translations (v1)")
         return entry
 
 
@@ -260,7 +286,6 @@ async def seed_data():
             {"name": "meta_description", "label": "SEO描述", "field_type": "textarea", "is_required": False, "is_translatable": True, "sort_order": 3},
         ])
 
-        # --- Content Entries ---
         print("\nContent Entries:")
         await get_or_create_entry_with_translations(db, article_type.id, "welcome-to-cms-zh", [
             {"language_code": "zh", "is_published": True, "title": "欢迎使用多语言CMS", "slug": "welcome-to-cms-zh",
