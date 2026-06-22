@@ -18,33 +18,24 @@
         {% if entry.translation %}
         <h2><a href="{{ url_for_lang(lang, content_type.slug ~ '/' ~ entry.translation.slug ~ '.html') }}">{{ entry.translation.title or 'Untitled' }}</a></h2>
 
-        {% if entry.translation.field_values %}
+        {% if entry.summary_display_fields or entry.show_plain_summary %}
         <div class="entry-summary">
-            {% for field_name, field_info in entry.field_info_map.items() %}
-            {% set field_val = entry.translation.field_values.get(field_name) %}
-            {% if field_val is not none and field_val is not undefined and field_val != '' %}
-            {% if field_info.type == 'image' %}
+            {% for field in entry.summary_display_fields %}
+            {% if field.type == 'image' %}
             <div class="field-image">
-                <img src="{{ field_val }}" alt="{{ field_info.label }}" loading="lazy">
+                <img src="{{ field.value }}" alt="{{ field.label }}" loading="lazy">
             </div>
-            {% elif field_info.type == 'richtext' %}
-            <div class="field-richtext">{{ field_val|striptags|truncate(300) }}</div>
-            {% elif field_info.type == 'textarea' %}
-            <p class="field-textarea">{{ field_val|truncate(200) }}</p>
-            {% elif field_info.type in ('text', 'number', 'select', 'url', 'date', 'datetime') %}
-            {% if field_val is string and field_val|length < 200 %}
-            <p><strong>{{ field_info.label }}:</strong>
-                {% if field_info.type == 'url' %}
-                <a href="{{ field_val }}" target="_blank" rel="noopener">{{ field_val }}</a>
-                {% else %}
-                {{ field_val }}
-                {% endif %}
-            </p>
-            {% endif %}
-            {% endif %}
+            {% elif field.type == 'richtext' %}
+            <div class="field-richtext">{{ (field.plain_text or field.value)|truncate(300) }}</div>
+            {% elif field.type == 'textarea' %}
+            <p class="field-textarea">{{ field.value|truncate(200) }}</p>
+            {% elif field.type == 'url' %}
+            <p><strong>{{ field.label }}:</strong> <a href="{{ field.value }}" target="_blank" rel="noopener">{{ field.value }}</a></p>
+            {% else %}
+            <p><strong>{{ field.label }}:</strong> {{ field.value }}</p>
             {% endif %}
             {% endfor %}
-            {% if entry.plain_summary and not entry.translation.field_values.get('summary') and not entry.translation.field_values.get('description') %}
+            {% if entry.show_plain_summary %}
             <p class="entry-summary-text">{{ entry.plain_summary|truncate(200) }}</p>
             {% endif %}
         </div>

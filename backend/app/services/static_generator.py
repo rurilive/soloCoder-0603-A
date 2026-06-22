@@ -114,14 +114,15 @@ def _strip_html_tags(html_text: str) -> str:
         return ""
     text = re.sub(r"<script[^>]*>.*?</script>", "", html_text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<p[^>]*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<li[^>]*>", "\n• ", text, flags=re.IGNORECASE)
+    block_tags = r"(?:div|p|h[1-6]|section|article|header|footer|nav|aside|blockquote|pre|li|tr|td|th|dd|dt|br|hr)"
+    text = re.sub(rf"</?{block_tags}[^>]*>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<li[^>]*>", " • ", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", "", text)
     text = unescape(text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r" \. ", ". ", text)
+    text = re.sub(r" , ", ", ", text)
+    text = re.sub(r"([.!?。！？])\s*([A-Z\u4e00-\u9fff])", r"\1 \2", text)
     return text.strip()
 
 
@@ -338,6 +339,94 @@ class StaticSiteGenerator:
             }
         return info_map
 
+    def _build_summary_display_fields(
+        self,
+        field_info_map: Dict[str, Dict[str, Any]],
+        field_values: Dict[str, Any],
+        plain_summary: str,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        hidden_fields = {"title", "name", "slug", "status_type", "status", "id", "draft"}
+        summary_field_names = {"summary", "description", "meta_description", "excerpt", "intro", "abstract"}
+        shown_field_names = set()
+        summary_display_fields: List[Dict[str, Any]] = []
+        has_summary_field = False
+
+        sorted_fields = sorted(
+            field_info_map.items(),
+            key=lambda x: x[1].get("sort_order", 0),
+        )
+
+        for field_name, field_info in sorted_fields:
+            if field_name in hidden_fields:
+                continue
+            if field_name not in field_values:
+                continue
+            value = field_values[field_name]
+            if value is None or value == "" or value == []:
+                continue
+            field_type = field_info.get("type", "text")
+            label = field_info.get("label", field_name)
+
+            if field_type in {"boolean"}:
+                continue
+            if field_type in {"select", "multi_select"} and not value:
+                continue
+
+            if field_name in summary_field_names:
+                if field_type in {"textarea", "text"} and isinstance(value, str) and len(value) <= 300:
+                    has_summary_field = True
+                    summary_display_fields.append({
+                        "name": field_name,
+                        "type": field_type,
+                        "label": label,
+                        "value": value,
+                    })
+                    shown_field_names.add(field_name)
+                continue
+
+            if field_type == "image":
+                summary_display_fields.append({
+                    "name": field_name,
+                    "type": field_type,
+                    "label": label,
+                    "value": value,
+                })
+                shown_field_names.add(field_name)
+                continue
+
+            if field_type in {"richtext"}:
+                cleaned = _strip_html_tags(str(value))
+                if cleaned and len(cleaned) >= 20 and not has_summary_field:
+                    summary_display_fields.append({
+                        "name": field_name,
+                        "type": field_type,
+                        "label": label,
+                        "value": value,
+                        "plain_text": cleaned,
+                    })
+                    shown_field_names.add(field_name)
+                continue
+
+            if field_type in {"textarea", "text", "url", "number", "date", "datetime", "select"}:
+                if isinstance(value, str) and len(value) <= 200:
+                    summary_display_fields.append({
+                        "name": field_name,
+                        "type": field_type,
+                        "label": label,
+                        "value": value,
+                    })
+                    shown_field_names.add(field_name)
+                continue
+
+        show_plain_summary = bool(
+            plain_summary
+            and not has_summary_field
+            and not any(f["type"] == "richtext" for f in summary_display_fields)
+            and len(plain_summary) >= 20
+        )
+
+        return summary_display_fields, show_plain_summary
+
     def _serialize_entry_public(
         self,
         entry: ContentEntry,
@@ -350,8 +439,13 @@ class StaticSiteGenerator:
         ct = content_type or entry.content_type
         field_info_map = self._build_field_info_map(ct, lang) if ct else {}
         plain_summary = ""
+        summary_display_fields: List[Dict[str, Any]] = []
+        show_plain_summary = False
         if trans and trans.get("field_values"):
             plain_summary = self._get_plain_summary(trans["field_values"])
+            summary_display_fields, show_plain_summary = self._build_summary_display_fields(
+                field_info_map, trans["field_values"], plain_summary
+            )
         return {
             "id": entry.id,
             "content_type_id": entry.content_type_id,
@@ -364,6 +458,8 @@ class StaticSiteGenerator:
             "lang_slug_map": self._get_lang_slug_map(entry),
             "field_info_map": field_info_map,
             "plain_summary": plain_summary,
+            "summary_display_fields": summary_display_fields,
+            "show_plain_summary": show_plain_summary,
         }
 
     def _serialize_content_type_public(self, ct: ContentType, lang: Optional[str] = None) -> Dict[str, Any]:
